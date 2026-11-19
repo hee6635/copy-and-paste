@@ -265,6 +265,13 @@ class MainActivity : ComponentActivity() {
             try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) { toast("열 수 있는 앱이 없어요") }
         }
 
+        /** 반자동: 제미나이 앱에 부탁 (글 복사 + 앱 열기) / 복사해 온 답 넣기 */
+        @JavascriptInterface fun manualAsk(id: String) {
+            if (Manual.send(this@MainActivity, id)) toast("부탁 글을 복사했어요 · 제미나이에 붙여넣고 보내 주세요")
+            else toast("제미나이 앱을 열지 못했어요")
+        }
+        @JavascriptInterface fun manualPaste(id: String): String = Manual.paste(this@MainActivity, id)?.toString() ?: ""
+
         /** 캘린더 앱에 일정 넣기 화면 열기. ev = {title, date:YYYY-MM-DD, time:HH:MM, end:YYYY-MM-DD, place, note} */
         @JavascriptInterface fun addCalendar(ev: String) {
             try {

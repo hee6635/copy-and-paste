@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicInteger
 /* AI 정리 (SaveService 가 부름): 폴더 목록 · Gemini 정리 · 폰 글자 먼저 · 자동 캡처 */
 
 /** 폴더 경로 목록 (meta.json) — "여행 › 나트랑" */
-internal fun SaveService.folderPaths(): List<String> = try {
+internal fun android.content.Context.folderPaths(): List<String> = try {
     val fs = JSONObject(Store.meta(this)).optJSONArray("folders") ?: JSONArray()
     val byId = (0 until fs.length()).map { fs.getJSONObject(it) }.associateBy { it.optString("id") }
     byId.values.map { f ->
@@ -40,6 +40,22 @@ internal fun SaveService.folderPaths(): List<String> = try {
         if (p != null) "$p › ${f.optString("name")}" else f.optString("name")
     }
 } catch (_: Throwable) { emptyList() }
+
+/** AI 결과를 메모에 넣기: 갈래 · 태그 더하기 · 정보 댓글 ★ · 실패 흔적 지우기 */
+internal fun mergeAi(o: JSONObject, ai: JSONObject) {
+    o.put("ai", ai)
+    ai.optString("category").takeIf { it.isNotEmpty() }?.let { o.put("category", it) }
+    val tags = o.optJSONArray("tags") ?: JSONArray()
+    val have = (0 until tags.length()).map { tags.getString(it) }.toMutableSet()
+    ai.optJSONArray("tags")?.let { t -> for (i in 0 until t.length()) { val v = t.optString(i).removePrefix("#").trim(); if (v.isNotEmpty() && have.add(v) && tags.length() < 8) tags.put(v) } }
+    o.put("tags", tags)
+    val cs = o.optJSONArray("comments"); val star = ai.optJSONArray("star")
+    if (cs != null) {
+        for (i in 0 until cs.length()) cs.optJSONObject(i)?.remove("star")
+        if (star != null) for (i in 0 until star.length()) cs.optJSONObject(star.optInt(i, -1))?.put("star", true)
+    }
+    listOf("aiBusy", "aiBusyAt", "aiError", "aiLog", "aiRetryAt", "aiRetryN").forEach { o.remove(it) }
+}
 
 /** Gemini 정리. 실패해도 저장은 그대로 두고 aiError 만 남김 */
 internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = false) {

@@ -249,7 +249,7 @@ object Gemini {
         return uri
     }
 
-    private fun prompt(item: JSONObject, folders: List<String>, withVideo: Boolean): String {
+    internal fun prompt(item: JSONObject, folders: List<String>, withVideo: Boolean): String {
         val sb = StringBuilder()
         sb.append("""너는 사용자가 저장한 SNS 게시물 · 영상 · 웹페이지를 메모로 정리하는 도우미야. 한국어로, 짧고 쉽게.
 규칙:

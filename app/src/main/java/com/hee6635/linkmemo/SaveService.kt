@@ -282,15 +282,28 @@ class SaveService : Service() {
         req.addOption("--socket-timeout", "30")
         if (platform == "youtube") {
             req.addOption("--write-subs"); req.addOption("--write-auto-subs")
-            req.addOption("--sub-langs", "ko,ko-orig,en,en-orig,ja,vi,zh-Hans")
+            req.addOption("--sub-langs", "ko,.*-orig")  // 한국어 + 영상 원래 말 자막만 (적게 받아야 유튜브 429 를 덜 맞음)
             req.addOption("--sub-format", "vtt")
         }
         req.addOption("-o", File(dir, "media.%(ext)s").absolutePath)
         if (platform == "instagram") Ig.cookieFile(this)?.let { req.addOption("--cookies", it.absolutePath) }
         stage(id, "내용 읽는 중", 0)
-        YoutubeDL.getInstance().execute(req, "save-$id", false, null)
-
+        // 자막 · 썸네일 같은 곁가지가 실패해도(예: 자막 429) 내용(info.json)을 읽었으면 그대로 저장
         val infoFile = File(dir, "media.info.json")
+        try { YoutubeDL.getInstance().execute(req, "save-$id", false, null) }
+        catch (e: Throwable) {
+            if (!infoFile.exists() && platform == "youtube") {
+                // 자막 때문에 내용까지 못 받았으면 자막 없이 한 번 더
+                stage(id, "자막 없이 다시 읽는 중", 0)
+                val r2 = YoutubeDLRequest(url)
+                listOf("--no-playlist", "--skip-download", "--write-info-json", "--write-thumbnail", "--write-comments").forEach { r2.addOption(it) }
+                r2.addOption("--convert-thumbnails", "jpg")
+                r2.addOption("--extractor-args", "youtube:max_comments=60,all,0,0;comment_sort=top")
+                r2.addOption("--socket-timeout", "30")
+                r2.addOption("-o", File(dir, "media.%(ext)s").absolutePath)
+                try { YoutubeDL.getInstance().execute(r2, "save2-$id", false, null) } catch (e2: Throwable) { if (!infoFile.exists()) throw e2 }
+            } else if (!infoFile.exists()) throw e
+        }
         if (!infoFile.exists()) throw IllegalStateException("내용을 읽지 못했어요")
         val info = JSONObject(infoFile.readText())
         val thumb = File(dir, "media.jpg")

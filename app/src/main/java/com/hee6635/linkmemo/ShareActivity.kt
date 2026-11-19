@@ -34,6 +34,14 @@ class ShareActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val text = intent?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+        // 제미나이 앱에서 답을 공유해 온 경우: 기다리던 메모에 넣고 끝
+        Manual.pending(this)?.let { pid ->
+            if (Manual.looksLike(text)) {
+                val ok = Manual.apply(this, pid, text) != null
+                Toast.makeText(this, if (ok) "제미나이 정리를 넣었어요" else "답을 읽지 못했어요 (JSON 부분까지 복사해 주세요)", Toast.LENGTH_SHORT).show()
+                finish(); return
+            }
+        }
         val url = Regex("https?://[^\\s\"'<>]+").find(text)?.value?.trimEnd(')', '.', ',')
         if (url == null) { Toast.makeText(this, "링크를 찾지 못했어요", Toast.LENGTH_SHORT).show(); finish(); return }
         val d = resources.displayMetrics.density

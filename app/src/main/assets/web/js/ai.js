@@ -8,10 +8,12 @@ function renderAi(it) {
   if (live) typeTok++;
   live = null;
   if (!ai) {
+    if (manualWait[it.id]) { el.innerHTML = manualHtml(); return; }
+    if (!it.aiError) { el.innerHTML = it.status === 'done' ? `<div class="sec"><div class="sh"><b>AI 정리</b></div><div class="bt"><button class="chip dark" data-manual>제미나이 앱으로 정리</button></div></div>` : ''; return; }
     if (it.aiError && it.aiRetryAt > Date.now()) { el.innerHTML = `<div class="sec"><div class="cmtx"><b>${hm(it.aiRetryAt)}쯤 다시 정리해요</b>
-      <div class="bt"><button class="chip dark" data-airedo>지금 다시</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>${logHtml(it.aiLog)}</div>`; return; }
+      <div class="bt"><button class="chip dark" data-airedo>지금 다시</button><button class="chip" data-manual>제미나이 앱으로</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>${logHtml(it.aiLog)}</div>`; return; }
     el.innerHTML = it.aiError ? `<div class="sec"><div class="cmtx"><b>AI 정리를 못 했어요</b><div class="why pre">${esc(String(it.aiError))}</div>
-      <div class="bt"><button class="chip dark" data-airedo>다시 정리</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>${logHtml(it.aiLog, true)}</div>` : '';
+      <div class="bt"><button class="chip dark" data-airedo>다시 정리</button><button class="chip" data-manual>제미나이 앱으로</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>${logHtml(it.aiLog, true)}</div>` : '';
     return;
   }
   let h = '';
@@ -262,3 +264,18 @@ function ensureFolder(path) {
   if (!k) { k = { id: 'f' + (Date.now() + 1).toString(36), name: b.slice(0, 20), parent: top.id }; meta.folders.push(k); }
   saveMeta(); return k.id;
 }
+
+// ── 반자동: 제미나이 앱에 부탁 → 답 복사 → 붙여넣기 ──
+const manualWait = {};
+const manualHtml = () => `<div class="sec"><div class="cmtx"><b>제미나이 답을 복사한 뒤 눌러 주세요</b>
+  <div class="bt"><button class="chip dark" data-mpaste>답 붙여넣기</button><button class="chip" data-manual>제미나이 다시 열기</button><button class="chip" data-mcancel>그만두기</button></div></div></div>`;
+document.addEventListener('click', e => {
+  if (!cur) return;
+  if (e.target.closest('[data-manual]')) { A.manualAsk && A.manualAsk(cur); manualWait[cur] = 1; renderAi(byId(cur)); return; }
+  if (e.target.closest('[data-mcancel]')) { delete manualWait[cur]; renderAi(byId(cur)); return; }
+  if (e.target.closest('[data-mpaste]')) {
+    const r = A.manualPaste ? A.manualPaste(cur) : '';
+    if (!r) { toast('복사한 답에서 정리를 못 찾았어요'); return; }
+    delete manualWait[cur]; replace(JSON.parse(r)); renderDetail(false); renderHome(); toast('정리를 넣었어요');
+  }
+});
