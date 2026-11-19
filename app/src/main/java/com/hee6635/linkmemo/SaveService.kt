@@ -35,6 +35,9 @@ object Events {
     @Volatile var listener: ((JSONObject) -> Unit)? = null
     fun item(o: JSONObject) { val l = listener ?: return; main.post { l(o) } }
     /** AI 가 쓰는 중인 글 (주르륵 보여 주기용) */
+    /** 폰이 먼저 읽은 화면 글자 (영상 보는 동안) */
+    @Volatile var ocr: ((String, String) -> Unit)? = null
+    fun ocr(id: String, json: String) { val l = ocr ?: return; main.post { l(id, json) } }
     @Volatile var partial: ((String, String) -> Unit)? = null
     fun partial(id: String, text: String) { val l = partial ?: return; main.post { l(id, text) } }
 }
@@ -211,14 +214,30 @@ class SaveService : Service() {
                     }
                 }
             }
+            // 폰이 먼저 화면 글자 읽기 (Gemini 가 영상을 보는 동안). 유튜브는 장면 · 글자용으로 작은 영상을 같이 받음
+            val stopOcr = java.util.concurrent.atomic.AtomicBoolean(false)
+            val savedVid = item.optString("video").takeIf { it.isNotEmpty() }?.let { File(Store.dir(this, id), it) }?.takeIf { it.exists() }
+            val holder = arrayOfNulls<File>(1)
+            val firstVid = savedVid ?: temp?.takeIf { it.exists() }
+            val ytUrl = yt
+            val side = Thread {
+                var v: File? = firstVid
+                if (v == null && ytUrl != null) v = try { tempVideo(id + "_yt", url).also { holder[0] = it } } catch (_: Throwable) { null }
+                if (v != null) Ocr.live(v, stopOcr) { o -> Events.ocr(id, o.toString()) }
+            }.also { it.start() }
             val ai = try {
                 Gemini.organize(this, item, folderPaths(), { st ->
                     emit(Store.patch(this, id) { it.put("aiBusy", "AI $st") })
-                }, temp, yt, pre) { txt -> Events.partial(id, txt) }
-            } catch (e: Throwable) { temp?.delete(); throw e }
+                }, temp, yt, pre) { txt -> stopOcr.set(true); Events.partial(id, txt) }
+            } catch (e: Throwable) { stopOcr.set(true); side.join(60000); temp?.delete(); holder[0]?.delete(); throw e }
+            stopOcr.set(true)
+            side.join(60000)
+            if (temp == null && holder[0] != null) temp = holder[0]
             // AI 가 고른 중요 장면 자동 캡처 (영상 파일이 있을 때: 저장한 영상 · 잠깐 받은 영상 · 유튜브는 작게 잠깐 받기)
-            val shots = ai.optJSONArray("keyshots")
-            if (shots != null && shots.length() > 0) {
+            val shots = JSONArray()
+            ai.optJSONArray("places")?.let { pl -> for (i in 0 until pl.length()) { val p0 = pl.getJSONObject(i); val tt = p0.optDouble("t", -1.0); if (tt >= 0) shots.put(JSONObject().put("t", tt + 0.6).put("why", p0.optString("name")).put("sec", "places").put("idx", i)) } }
+            ai.optJSONArray("keyshots")?.let { k -> for (i in 0 until k.length()) shots.put(k.get(i)) }
+            if (shots.length() > 0) {
                 try {
                     emit(Store.patch(this, id) { it.put("aiBusy", "AI 중요 장면 캡처 중") })
                     val saved = item.optString("video").takeIf { it.isNotEmpty() }?.let { File(Store.dir(this, id), it) }?.takeIf { it.exists() }
@@ -272,6 +291,7 @@ class SaveService : Service() {
         }
         fun hit(s: String?) = s != null && words.any { w -> s.contains(w) || (w.length >= 3 && s.contains(w.take(w.length - 1))) }
         val sec = k.optString("sec"); val idx = k.optInt("idx", -1)
+        if ((sec == "places" || sec == "steps") && idx >= 0) return JSONObject().put("sec", sec).put("i", idx)
         if ((sec == "summary" || sec == "facts") && idx >= 0 && hit(lineText(sec, idx))) return JSONObject().put("sec", sec).put("i", idx)
         for (s2 in listOf("summary", "facts")) {
             val n = if (s2 == "summary") ai.optJSONArray("summary")?.length() ?: 0 else ai.optJSONArray("facts")?.length() ?: 0
@@ -286,7 +306,7 @@ class SaveService : Service() {
             for (i in 0 until arr.length()) { val c = arr.getJSONObject(i); if (c.optBoolean("ai")) File(dir, c.optString("file")).delete() }
         }
         val made = mutableListOf<JSONObject>()
-        for (i in 0 until minOf(5, shots.length())) {
+        for (i in 0 until minOf(10, shots.length())) {
             val k = shots.getJSONObject(i)
             val t = k.optDouble("t", -1.0); if (t < 0) continue
             val capId = "cap_ai_${System.currentTimeMillis()}_$i"

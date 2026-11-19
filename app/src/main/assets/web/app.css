@@ -420,3 +420,36 @@ body.selecting .card .ck{display:flex}
 @keyframes spin{to{transform:rotate(360deg)}}
 #lvCards .scard{background:var(--bg)}
 @media (prefers-color-scheme:dark){.chip2,.tl.hi{background:#4a3f1c;color:var(--fg)}}
+
+/* 결과 한눈에: 장소 표 · 순서 · 팁 */
+.pr{display:flex;gap:10px;padding:9px 0;border-top:1px solid var(--line);align-items:flex-start}
+.sh+.pr,.runlog+.pr,.runinfo+.pr{border-top:0}
+.th2{width:58px;height:58px;border-radius:12px;flex-shrink:0;position:relative;overflow:visible;padding:0;background:var(--surface)}
+.th2 img{width:100%;height:100%;object-fit:cover;border-radius:12px;display:block}
+.th2 i{position:absolute;left:-4px;top:-4px;width:20px;height:20px;border-radius:10px;background:var(--fg);color:var(--bg);font-size:11px;font-weight:800;font-style:normal;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg)}
+.th2.n{display:flex;align-items:center;justify-content:center}
+.th2.n i{position:static;width:26px;height:26px;border-radius:13px;font-size:12.5px;border:0}
+.th2.s{width:46px;height:46px}
+.pb{flex:1;min-width:0}
+.pb>b{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:15px;font-weight:800}
+.pb .tm{font-size:11.5px;color:var(--sub);background:var(--surface);border-radius:5px;padding:1px 6px;font-weight:700;flex-shrink:0}
+.pb p{margin:3px 0 0;font-size:13.5px;line-height:1.55;color:var(--fg);user-select:text;-webkit-user-select:text}
+.pr.st{align-items:center}.pr.st .pb p{margin:0;font-size:14px}
+.pr.pop,.tip3.pop{animation:cardup .45s var(--ease)}
+.tip3{display:flex;gap:8px;padding:6px 0;font-size:14.5px;line-height:1.55}
+.tip3>b{flex-shrink:0}
+.ing{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+.ing .chk{min-height:38px;font-size:14px}
+.tl small{margin-left:auto;font-size:10.5px;color:var(--muted);flex-shrink:0;padding-left:6px}
+.tl.ph small{color:var(--sub)}
+.lvprog{height:4px;background:var(--line);border-radius:2px;margin-top:10px;overflow:hidden;transition:opacity .4s,max-height .5s,margin .5s}
+.lvprog i{display:block;height:4px;background:var(--fg);transform-origin:left;transform:scaleX(0);transition:transform .6s var(--ease)}
+.lvprog.gone{max-height:0!important;opacity:0;margin:0}
+.lvpl{margin:10px 0 0}
+
+/* 번역 */
+.ts .ko{display:block;font-style:normal;color:var(--sub);font-size:13.5px;margin-top:2px}
+.kobox small{display:block;font-size:12px;color:var(--sub);font-weight:600;margin-bottom:2px}
+.orig{margin-top:10px}
+.orig summary{font-size:13.5px;font-weight:600;color:var(--sub);cursor:pointer;height:32px;display:flex;align-items:center}
+.tip3 .stx{padding:0;font-size:14.5px;font-weight:400;letter-spacing:0}

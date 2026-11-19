@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         Events.listener = { o -> js("App.onItem(${JSONObject.quote(o.toString())})") }
+        Events.ocr = { id, j -> js("App.onOcr&&App.onOcr(${JSONObject.quote(id)},${j})") }
         Events.partial = { id, txt -> js("App.onPartial&&App.onPartial(${JSONObject.quote(id)},${JSONObject.quote(txt)})") }
         web.loadUrl("https://$HOST/assets/web/index.html")
 
