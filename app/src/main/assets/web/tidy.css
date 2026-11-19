@@ -36,3 +36,24 @@
 .tdone{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--sub);font-size:14.5px;animation:pop .35s var(--ease)}
 .tdone b{font-size:20px;color:var(--fg)}
 .tdone .chip{margin-top:8px}
+
+/* 막 저장된 카드 내려앉기 · 스프링 */
+.card.land{animation:land .62s var(--spring)}
+@keyframes land{from{transform:translateY(-36px) scale(.92);opacity:0}to{transform:none;opacity:1}}
+.tcard.back{transition:transform .45s var(--spring),opacity .32s}
+
+/* 인분 조절 · 일정 */
+.shr{display:flex;align-items:center;gap:8px}
+.srv{display:flex;align-items:center;height:32px;border-radius:16px;background:var(--surface)}
+.srv button{width:32px;height:32px;font-size:17px;font-weight:700;color:var(--fg);transition:transform .2s var(--spring)}
+.srv button:active{transform:scale(.85)}
+.srv button[disabled]{opacity:.3}
+.srv b{min-width:44px;text-align:center;font-size:13.5px;font-variant-numeric:tabular-nums}
+.evr{display:flex;align-items:center;gap:12px;padding:8px 0}
+.evr+.evr{border-top:1px solid var(--line)}
+.evd{width:46px;height:46px;border-radius:12px;background:var(--surface);display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0}
+.evd b{font-size:15px;line-height:1.1}
+.evd span{font-size:11.5px;color:var(--sub)}
+.evb{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.evb b{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.evb span{font-size:13px;color:var(--sub)}

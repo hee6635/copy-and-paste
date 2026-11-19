@@ -8,6 +8,8 @@ function renderAi(it) {
   if (live) typeTok++;
   live = null;
   if (!ai) {
+    if (it.aiError && it.aiRetryAt > Date.now()) { el.innerHTML = `<div class="sec"><div class="cmtx"><b>${hm(it.aiRetryAt)}쯤 다시 정리해요</b>
+      <div class="bt"><button class="chip dark" data-airedo>지금 다시</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>${logHtml(it.aiLog)}</div>`; return; }
     el.innerHTML = it.aiError ? `<div class="sec"><div class="cmtx"><b>AI 정리를 못 했어요</b><div class="why pre">${esc(String(it.aiError))}</div>
       <div class="bt"><button class="chip dark" data-airedo>다시 정리</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>${logHtml(it.aiLog, true)}</div>` : '';
     return;
@@ -38,8 +40,9 @@ function renderAi(it) {
   if (places.length) {
     h += `<div class="sec"><div class="sh"><b>장소 ${places.length}</b>${redo}</div>${runinfo}${places.map((p, i) => placeRow(it, p, i)).join('')}</div>`;
   } else if (rec) {
-    h += `<div class="sec"><div class="sh"><b>재료 ${(rec.ingredients || []).length}</b>${redo}</div>${runinfo}
-      <div class="ing">${(rec.ingredients || []).map((x, i) => `<button class="chk${(ck.i || []).includes(i) ? ' on' : ''}" data-chk="i:${i}"><i></i><span>${esc(x)}</span></button>`).join('')}</div></div>`;
+    const f = srvF(it);
+    h += `<div class="sec"><div class="sh"><b>재료 ${(rec.ingredients || []).length}</b><span class="shr">${srvHtml(it, rec)}${redo}</span></div>${runinfo}
+      <div class="ing">${(rec.ingredients || []).map((x, i) => `<button class="chk${(ck.i || []).includes(i) ? ' on' : ''}" data-chk="i:${i}"><i></i><span>${esc(scaleIng(x, f))}</span></button>`).join('')}</div></div>`;
     if ((rec.steps || []).length) h += `<div class="sec"><div class="sh"><b>순서 ${rec.steps.length}</b></div>${rec.steps.map((x, i) => stepRow(it, x, i)).join('')}</div>`;
   }
   if (sum.length || sugg) {
@@ -53,9 +56,45 @@ function renderAi(it) {
     ${(ai.facts || []).map((f, i) => !f || !f.text ? '' : `<button class="ts" ${+f.t >= 0 ? `data-seek="${+f.t}"` : ''}>${+f.t >= 0 ? `<b>${fmtT(f.t)}</b>` : '<b>·</b>'}<span>${esc(f.text)}</span></button>${attHtml(it, 'facts', i)}`).join('')}</div>`;
   if (ai.kind === 'checklist' && (ai.checklist || []).length) h += `<div class="sec"><div class="sh"><b>체크리스트</b><span class="ai">AI</span></div>
     ${ai.checklist.map((x, i) => `<button class="chk${(ck.c || []).includes(i) ? ' on' : ''}" data-chk="c:${i}"><i></i><span>${esc(x)}</span></button>`).join('')}</div>`;
+  h += eventsHtml(it, ai);
   if (it.aiError) h += `<div class="sec"><div class="cmtx"><div class="why">다시 정리 실패: ${esc(String(it.aiError).split('\n')[0])}</div></div></div>`;
   el.innerHTML = h;
 }
+
+const hm = ms => { const d = new Date(ms); return (d.getHours() < 12 ? '오전 ' : '오후 ') + ((d.getHours() + 11) % 12 + 1) + ':' + String(d.getMinutes()).padStart(2, '0'); };
+
+// ── 인분 조절: 재료 속 숫자에 배수를 곱함 (분수 1/2 도) ──
+const srvMul = {};
+const MULS = [0.5, 1, 1.5, 2, 3, 4];
+const srvF = it => srvMul[it.id] || 1;
+function srvHtml(it, rec) {
+  const f = srvF(it), b = +rec.servings > 0 ? +rec.servings : 0;
+  const lab = b ? fmtN(b * f) + '인분' : '×' + fmtN(f);
+  return `<span class="srv"><button data-srv="-1" aria-label="줄이기"${f <= MULS[0] ? ' disabled' : ''}>−</button><b>${lab}</b><button data-srv="1" aria-label="늘리기"${f >= MULS[MULS.length - 1] ? ' disabled' : ''}>+</button></span>`;
+}
+const fmtN = n => String(Math.round(n * 10) / 10);
+function scaleIng(x, f) {
+  if (f === 1) return x;
+  return String(x).replace(/(\d+(?:\.\d+)?)(?:\s*\/\s*(\d+))?/g, (m, a, b) => fmtN((b ? +a / +b : +a) * f));
+}
+
+// ── 일정 → 캘린더 ──
+const evList = ai => (ai.events || []).filter(e => e && e.title && /^\d{4}-\d{2}-\d{2}$/.test(e.date));
+function eventsHtml(it, ai) {
+  const evs = evList(ai); if (!evs.length) return '';
+  const W = '일월화수목금토';
+  return `<div class="sec"><div class="sh"><b>일정 ${evs.length}</b></div>${evs.map((e, i) => {
+    const d = new Date(e.date + 'T00:00:00');
+    const sub = [e.time, e.end && e.end !== e.date ? '~ ' + (+e.end.slice(5, 7)) + '.' + (+e.end.slice(8)) : '', e.place].filter(Boolean).join(' · ');
+    return `<div class="evr"><div class="evd"><b>${d.getMonth() + 1}.${d.getDate()}</b><span>${W[d.getDay()]}</span></div><div class="evb"><b>${esc(e.title)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div><button class="chip" data-cal="${i}">+ 캘린더</button></div>`;
+  }).join('')}</div>`;
+}
+document.addEventListener('click', e => {
+  const sv = e.target.closest('[data-srv]');
+  if (sv && cur) { const it = byId(cur); const i = MULS.indexOf(srvF(it)); const j = Math.max(0, Math.min(MULS.length - 1, i + +sv.dataset.srv)); srvMul[cur] = MULS[j]; renderAi(it); return; }
+  const cb = e.target.closest('[data-cal]');
+  if (cb && cur) { const it = byId(cur); const ev = evList(it.ai || {})[+cb.dataset.cal]; if (ev && A.addCalendar) A.addCalendar(JSON.stringify(Object.assign({ note: (it.title || '') + '\n' + it.url }, ev))); }
+});
 
 /** 긴 영상 목차 한 줄: 시간 · 제목 · 핵심 · (자막이 있으면) 이 부분 자막 펼치기 */
 function chapterRow(it, chs, i) {

@@ -71,11 +71,14 @@ class SaveService : Service() {
                     "comments" -> try { refetchComments(id) } catch (_: Throwable) {}
                     "video" -> try { downloadLater(id) } catch (_: Throwable) {}
                     "ai" -> try { aiInto(id, true) } catch (_: Throwable) {}
+                    "aiAuto" -> try { if (id in AiRetry.due(this@SaveService)) aiInto(id, true, auto = true) } catch (_: Throwable) {}
                     else -> {
                         try { process(id) } catch (e: Throwable) { fail(id, e.message ?: e.toString()) }
                         if (Store.get(this@SaveService, id)?.optString("status") == "done") try { aiInto(id, false) } catch (_: Throwable) {}
                     }
                 }
+                // 실패했던 AI 정리 중 다시 할 차례인 것 (일꾼이 깨어 있는 김에)
+                if (action != "aiAuto") AiRetry.due(this@SaveService).forEach { d -> try { aiInto(d, true, auto = true) } catch (_: Throwable) {} }
             }
             if (running.decrementAndGet() == 0) stopIfIdle()
         }

@@ -52,6 +52,17 @@ object Gemini {
     @Volatile var lastErrRaw = ""
     /** 실패해도 기록(log)은 남김 */
     class AiFail(msg: String, val log: JSONObject) : IllegalStateException(msg)
+    /** 키 문제 (다시 해도 안 됨) */
+    class KeyBad(msg: String) : IllegalStateException(msg)
+    /** 1초씩 쉬며 중지 확인 */
+    private fun nap(ms: Long) { var left = ms; while (left > 0) { checkCancel(); Thread.sleep(minOf(1000L, left)); left -= 1000 } }
+    /** 429 본문: 하루 한도가 아니고 구글이 60초 이하로 기다리라고 하면 그 시간(ms), 아니면 0 */
+    fun retryWait(raw: String): Long {
+        val low = raw.lowercase()
+        if ("perday" in low || "per_day" in low) return 0
+        val sec = Regex("\"retryDelay\"\\s*:\\s*\"([0-9.]+)s\"").find(raw)?.groupValues?.get(1)?.toDoubleOrNull() ?: return 0
+        return if (sec <= 60) (sec * 1000).toLong() + 1000 else 0
+    }
 
     fun label(m: String) = when (m) { "gemini-flash-latest" -> "최신 flash"; "gemini-flash-lite-latest" -> "flash-lite"; else -> m.removePrefix("gemini-") }
 
@@ -249,7 +260,8 @@ object Gemini {
 - course: 빈 목록 (places 로 대신).
 - category: 아래 목록 중 딱 하나 (큰 갈래): ${CATEGORIES.joinToString(", ")}
 - kind: 요리법이면 recipe, 할 일 · 준비물 목록이면 checklist, 그 밖은 general.
-- recipe: kind 가 recipe 일 때만. 재료(양 포함)와 순서.
+- recipe: kind 가 recipe 일 때만. 재료(양 포함)와 순서. 재료 양은 숫자로 (예: 감자 2개, 간장 1.5큰술, 물 200ml — "적당량"은 그대로). servings 는 몇 인분인지 (나오지 않으면 짐작, 모르면 1).
+- events: 날짜가 정해진 행사 · 할인 · 공연 · 마감 · 예약 오픈만 0~3개. title 은 짧게, date 는 YYYY-MM-DD (연도가 없으면 오늘 기준 가장 가까운 앞날), time 은 HH:MM (없으면 빈칸), end 는 끝나는 날 YYYY-MM-DD (없으면 빈칸), place 는 장소 (없으면 빈칸). 날짜가 없으면 빈 목록.
 - checklist: kind 가 checklist 일 때만.
 - tips: 영상(말 · 화면 글자) · 댓글 · 작성자 답글에서 실제로 쓸모 있는 정보만 0~6개 (추천 · 주의 · 가격 · 시간 · 위치 등). 인사 · 태그 · 감탄은 빼기. from 은 영상이면 video(그 시각 t 초), 작성자 답글이면 author, 댓글이면 comment(t 는 -1). who 는 아이디(영상이면 빈칸).
 - star: 정보가 있는 댓글의 번호(0부터) 목록.
@@ -260,7 +272,8 @@ object Gemini {
         sb.append("- 번역: transcript 의 말이나 화면 글자가 한국어가 아니면 text 는 원문 그대로 두고 ko 에 자연스러운 한국어 번역 (한국어면 ko 는 빈칸). desc_ko 는 [설명]이 한국어가 아니면 한국어 번역, 한국어면 빈칸. 다른 칸(summary · places · tips 등)은 언제나 한국어로.\n")
         if (withVideo) sb.append("- transcript: 영상에서 말하는 내용을 시간(초)과 함께 받아쓰기. 화면에 크게 나오는 글자도 [화면] 으로 넣기. 말이 없으면 빈 목록.\n")
         else sb.append("- transcript: 빈 목록.\n")
-        sb.append("\n내 폴더: ").append(if (folders.isEmpty()) "(없음)" else folders.joinToString(" / ")).append("\n\n")
+        sb.append("\n오늘: ").append(java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())).append("\n")
+        sb.append("내 폴더: ").append(if (folders.isEmpty()) "(없음)" else folders.joinToString(" / ")).append("\n\n")
         sb.append("[출처] ").append(item.optString("platform")).append(" · ").append(item.optString("author")).append("\n")
         sb.append("[제목] ").append(item.optString("title")).append("\n")
         item.optString("desc").takeIf { it.isNotBlank() }?.let { sb.append("[설명]\n").append(it.take(6000)).append("\n") }
@@ -294,7 +307,8 @@ object Gemini {
             "folder" to str(),
             "kind" to JSONObject().put("type", "STRING").put("enum", JSONArray(listOf("recipe", "checklist", "general"))),
             "category" to JSONObject().put("type", "STRING").put("enum", JSONArray(CATEGORIES)),
-            "recipe" to obj("ingredients" to arr(str()), "steps" to arr(str())),
+            "recipe" to obj("servings" to JSONObject().put("type", "INTEGER"), "ingredients" to arr(str()), "steps" to arr(str())),
+            "events" to arr(obj("title" to str(), "date" to str(), "time" to str(), "end" to str(), "place" to str(), req = listOf("title", "date"))),
             "checklist" to arr(str()),
             "tips" to arr(obj("text" to str(), "from" to str(), "who" to str(), "t" to JSONObject().put("type", "NUMBER"), req = listOf("text"))),
             "keyshots" to arr(obj("t" to JSONObject().put("type", "NUMBER"), "why" to str(),
@@ -309,7 +323,7 @@ object Gemini {
             req = listOf("summary", "tags", "folder", "kind", "category", "tips", "star", "transcript")
         ).put("propertyOrdering", JSONArray(listOf(
             // 화면에 먼저 보일 것부터: 받아쓰기 → 정보 → 요약 → 코스 → 꿀팁 → 나머지
-            "transcript", "places", "facts", "summary", "course", "tips", "keyshots", "recipe", "checklist",
+            "transcript", "places", "facts", "summary", "course", "tips", "keyshots", "recipe", "checklist", "events",
             "tags", "folder", "kind", "category", "star", "desc_ko")))
     }
 
@@ -336,15 +350,24 @@ object Gemini {
         cancelled = false
         val log = RunLog(ctx)
         pre.forEach { (step, ms, note) -> log.add(step, ms, note, !note.startsWith("실패")) }
+        val hasSaved = item.optString("video").isNotEmpty()
         return try { organizeImpl(ctx, key, item, folders, onStage, log, tempVideo, ytUrl, onPartial) }
-        catch (e: Throwable) { throw AiFail(if (cancelled) "중지했어요" else explain(e), log.json(null)) }
+        catch (e: Throwable) {
+            if (cancelled) throw AiFail("중지했어요", log.json(null))
+            // 영상으로 하다 실패하면 → 글(제목 · 설명 · 댓글)만으로 한 번 더. 키 문제면 그대로 멈춤
+            if (e is KeyBad || (tempVideo == null && ytUrl == null && !hasSaved)) throw AiFail(explain(e), log.json(null))
+            log.add("영상 없이 다시", 0, "영상으로 실패: " + explain(e).lineSequence().first().substringBefore(" →"), false)
+            onStage("영상 없이 글만으로 다시 정리 중")
+            try { organizeImpl(ctx, key, item, folders, onStage, log, null, null, onPartial, noVideo = true).put("noVideo", true) }
+            catch (e2: Throwable) { throw AiFail(if (cancelled) "중지했어요" else explain(e2), log.json(null)) }
+        }
     }
 
     private fun organizeImpl(ctx: Context, key: String, item: JSONObject, folders: List<String>, onStage: (String) -> Unit, log: RunLog,
-                             tempVideo: File?, ytUrl: String?, onPartial: ((String) -> Unit)?): JSONObject {
+                             tempVideo: File?, ytUrl: String?, onPartial: ((String) -> Unit)?, noVideo: Boolean = false): JSONObject {
         val parts = JSONArray()
         val vName = item.optString("video")
-        val saved = if (vName.isNotEmpty()) File(Store.dir(ctx, item.optString("id")), vName) else null
+        val saved = if (vName.isNotEmpty() && !noVideo) File(Store.dir(ctx, item.optString("id")), vName) else null
         val vFile = (saved?.takeIf { it.exists() } ?: tempVideo?.takeIf { it.exists() })?.takeIf { it.length() < 1_900_000_000L }
         var withVideo = false
         if (vFile != null) {
@@ -485,15 +508,19 @@ object Gemini {
                     log.add("${label(model)} #${attempt + 1}", System.currentTimeMillis() - t0, why + " · " + timingText(last), false, last)
                     tried.append("${label(model)} #${attempt + 1}: $why\n")
                     val keyBad = e is HttpErr && (e.code == 401 || e.code == 403 || (e.code == 400 && (e.message ?: "").contains("키가 맞지")))
-                    if (keyBad) throw IllegalStateException(tried.toString().trim())
+                    if (keyBad) throw KeyBad(tried.toString().trim())
                     val timeout = e is java.net.SocketTimeoutException
-                    val skipModel = timeout || (e is HttpErr && (e.code == 400 || e.code == 404 || e.code == 429))
+                    val wait429 = if (e is HttpErr && e.code == 429) retryWait(lastErrRaw) else 0L
+                    val busy = e is HttpErr && e.code in listOf(500, 502, 503, 504)
+                    val skipModel = timeout || (e is HttpErr && (e.code == 400 || e.code == 404 || (e.code == 429 && wait429 == 0L)))
                     val shortMsg = if (timeout) "${limit / 1000}초 응답 없음" else short
                     if (e is HttpErr && e.code == 404) forget(ctx, model)
                     val next = models.getOrNull(mi + 1)
                     if (attempt < 2 && !skipModel) {
-                        onStage("${label(model)} 안 됨 ($shortMsg) → 같은 모델로 다시 시도")
-                        Thread.sleep(if (attempt == 0) 2000 else 5000)
+                        // 분당 한도: 구글이 말한 만큼 · 혼잡: 8초 · 20초 · 그 밖: 2초 · 5초
+                        val ms = if (wait429 > 0) wait429 else if (busy) (if (attempt == 0) 8000L else 20000L) else (if (attempt == 0) 2000L else 5000L)
+                        onStage("${label(model)} 안 됨 ($shortMsg) → ${ms / 1000}초 쉬고 다시 시도")
+                        nap(ms)
                     } else {
                         if (next != null) onStage("${label(model)} 안 됨 ($shortMsg) → ${label(next)}로 바꿔서 시도")
                         break

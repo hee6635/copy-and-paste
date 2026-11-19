@@ -133,7 +133,7 @@ function tDrag(c) {
     if (!on) return; on = false;
     if (horiz && dx < -100) return tDo('del');
     if (horiz && dx > 100) return tGo();
-    c.style.transition = 'transform .3s var(--ease)'; c.style.transform = ''; del.style.opacity = 0; ok.style.opacity = 0;
+    c.style.transition = 'transform .45s var(--spring)'; c.style.transform = ''; del.style.opacity = 0; ok.style.opacity = 0;
   };
   c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
 }

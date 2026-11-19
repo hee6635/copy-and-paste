@@ -42,14 +42,14 @@ internal fun SaveService.folderPaths(): List<String> = try {
 } catch (_: Throwable) { emptyList() }
 
 /** Gemini 정리. 실패해도 저장은 그대로 두고 aiError 만 남김 */
-internal fun SaveService.aiInto(id: String, force: Boolean) {
+internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = false) {
     if (!(if (force) Gemini.key(this).isNotEmpty() else Gemini.on(this))) {
         if (force) emit(Store.patch(this, id) { it.put("aiError", "Gemini API 키가 없어요 (설정에서 넣어 주세요)") })
         return
     }
     val item = Store.get(this, id) ?: return
     Usage.memo(this)
-    emit(Store.patch(this, id) { it.put("aiBusy", "AI 정리 준비 중"); it.put("aiBusyAt", System.currentTimeMillis()); it.remove("aiError"); it.remove("aiLog") })
+    emit(Store.patch(this, id) { it.put("aiBusy", if (auto) "AI 다시 정리 준비 중" else "AI 정리 준비 중"); it.put("aiBusyAt", System.currentTimeMillis()); it.remove("aiError"); it.remove("aiLog"); it.remove("aiRetryAt"); if (!auto) it.remove("aiRetryN") })
     updateNotif("AI 정리 중")
     // 긴 영상(10분 넘음): 5분씩 목차 → 목차를 글로 붙여 짧게 한 번 더 정리(팁 · 장소 · 태그)
     if (item.optBoolean("long") && SaveService.platformOf(item.optString("url")) == "youtube") {
@@ -74,13 +74,14 @@ internal fun SaveService.aiInto(id: String, force: Boolean) {
                 val have = (0 until tags.length()).map { tags.getString(it) }.toMutableSet()
                 ai.optJSONArray("tags")?.let { t -> for (i in 0 until t.length()) { val v = t.getString(i).removePrefix("#").trim(); if (v.isNotEmpty() && have.add(v) && tags.length() < 8) tags.put(v) } }
                 o.put("tags", tags)
-                o.remove("aiBusy"); o.remove("aiBusyAt"); o.remove("aiError"); o.remove("aiLog")
+                o.remove("aiBusy"); o.remove("aiBusyAt"); o.remove("aiError"); o.remove("aiLog"); o.remove("aiRetryAt"); o.remove("aiRetryN")
             })
         } catch (e: Throwable) {
             emit(Store.patch(this, id) {
                 it.remove("aiBusy"); it.remove("aiBusyAt")
                 it.put("aiError", if (e is Gemini.AiFail) (e.message ?: "") else Gemini.explain(e))
                 if (e is Gemini.AiFail) it.put("aiLog", e.log)
+                AiRetry.plan(this, it, e, it.optString("aiError"))
             })
         }
         return
@@ -154,13 +155,14 @@ internal fun SaveService.aiInto(id: String, force: Boolean) {
                 for (i in 0 until cs.length()) cs.getJSONObject(i).remove("star")
                 if (star != null) for (i in 0 until star.length()) cs.optJSONObject(star.optInt(i, -1))?.put("star", true)
             }
-            o.remove("aiBusy"); o.remove("aiBusyAt"); o.remove("aiError"); o.remove("aiLog")
+            o.remove("aiBusy"); o.remove("aiBusyAt"); o.remove("aiError"); o.remove("aiLog"); o.remove("aiRetryAt"); o.remove("aiRetryN")
         })
     } catch (e: Throwable) {
         emit(Store.patch(this, id) {
             it.remove("aiBusy"); it.remove("aiBusyAt")
             it.put("aiError", if (e is Gemini.AiFail) (e.message ?: "") else Gemini.explain(e))
             if (e is Gemini.AiFail) it.put("aiLog", e.log)
+            AiRetry.plan(this, it, e, it.optString("aiError"))
         })
     }
 }

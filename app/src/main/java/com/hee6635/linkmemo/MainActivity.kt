@@ -135,6 +135,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         PhoneState.markForeground(true)
         if (pageReady) js("App.onResume&&App.onResume()")
+        try { AiRetry.kick(this) } catch (_: Throwable) {}
     }
 
     private fun handleIntent(i: Intent?) {
@@ -262,6 +263,33 @@ class MainActivity : ComponentActivity() {
 
         @JavascriptInterface fun open(url: String) {
             try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) { toast("열 수 있는 앱이 없어요") }
+        }
+
+        /** 캘린더 앱에 일정 넣기 화면 열기. ev = {title, date:YYYY-MM-DD, time:HH:MM, end:YYYY-MM-DD, place, note} */
+        @JavascriptInterface fun addCalendar(ev: String) {
+            try {
+                val o = org.json.JSONObject(ev)
+                val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                val dt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
+                val time = o.optString("time").trim()
+                val allDay = !Regex("^\\d{1,2}:\\d{2}$").matches(time)
+                val begin = (if (allDay) day.parse(o.optString("date")) else dt.parse(o.optString("date") + " " + time))?.time ?: throw IllegalArgumentException()
+                val endDay = o.optString("end").takeIf { it.isNotBlank() }?.let { day.parse(it)?.time }
+                val end = when {
+                    endDay != null && endDay >= begin -> if (allDay) endDay + 86_400_000L else endDay + 86_400_000L - 60_000L
+                    allDay -> begin + 86_400_000L
+                    else -> begin + 3_600_000L
+                }
+                val i = Intent(Intent.ACTION_INSERT).setData(android.provider.CalendarContract.Events.CONTENT_URI)
+                    .putExtra(android.provider.CalendarContract.Events.TITLE, o.optString("title"))
+                    .putExtra(android.provider.CalendarContract.Events.EVENT_LOCATION, o.optString("place"))
+                    .putExtra(android.provider.CalendarContract.Events.DESCRIPTION, o.optString("note"))
+                    .putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, begin)
+                    .putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, end)
+                    .putExtra(android.provider.CalendarContract.EXTRA_EVENT_ALL_DAY, allDay)
+                startActivity(i)
+            } catch (_: android.content.ActivityNotFoundException) { toast("캘린더 앱이 없어요") }
+            catch (_: Exception) { toast("날짜를 읽지 못했어요") }
         }
 
         @JavascriptInterface fun copy(text: String) {
