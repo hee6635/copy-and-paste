@@ -189,6 +189,16 @@ class MainActivity : ComponentActivity() {
 
         @JavascriptInterface fun remove(id: String) = Store.delete(ctx, id)
 
+        @JavascriptInterface fun removeMany(ids: String) {
+            val a = JSONArray(ids); for (i in 0 until a.length()) Store.delete(ctx, a.getString(i))
+        }
+        @JavascriptInterface fun updateMany(ids: String, fields: String) {
+            val a = JSONArray(ids); val set = (0 until a.length()).map { a.getString(it) }.toSet()
+            Store.patchMany(ctx, set, JSONObject(fields))
+        }
+        @JavascriptInterface fun meta(): String = Store.meta(ctx)
+        @JavascriptInterface fun setMeta(json: String) = Store.setMeta(ctx, json)
+
         @JavascriptInterface fun retry(id: String) {
             Store.patch(ctx, id) { it.put("status", "saving"); it.put("stage", "대기 중"); it.remove("error") }
                 ?.let { Events.item(it) }

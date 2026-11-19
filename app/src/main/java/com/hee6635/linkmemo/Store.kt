@@ -97,6 +97,28 @@ object Store {
         null
     }
 
+    /** 여러 개 한 번에: 칸 덮어쓰기 */
+    fun patchMany(ctx: Context, ids: Set<String>, fields: JSONObject) = synchronized(lock) {
+        val arr = load(ctx)
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            if (o.optString("id") in ids) fields.keys().forEach { k -> o.put(k, fields.get(k)) }
+        }
+        save(ctx, arr)
+    }
+
+    /** 홈 순서 · 분류 목록 등 (files/data/meta.json) */
+    fun meta(ctx: Context): String = synchronized(lock) {
+        val f = File(ctx.filesDir, "data/meta.json")
+        if (f.exists()) f.readText() else "{}"
+    }
+    fun setMeta(ctx: Context, json: String) = synchronized(lock) {
+        JSONObject(json)
+        val f = File(ctx.filesDir, "data/meta.json")
+        val tmp = File(f.parentFile, "meta.json.tmp")
+        tmp.writeText(json); tmp.renameTo(f)
+    }
+
     fun usedBytes(ctx: Context): Long = itemsRoot(ctx).walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
     /** 영상 파일만 지우기 (메모 · 썸네일 · 캡처는 남김) */
