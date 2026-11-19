@@ -198,11 +198,11 @@ object Diag {
             var models = emptyList<String>()
             val keyOk = if (reach.state != "ok") { skip("AI · 키 확인", "서버에 닿지 않아서 못 함"); false } else step("AI · 키 확인") { s ->
                 models = try { Gemini.listModels(ctx) } catch (e: Throwable) { throw IllegalStateException(Gemini.explain(e)) }
-                val have = Gemini.MODELS.map { m -> m + if (m in models) " ✓" else " ✕" }
+                val have = Gemini.order(ctx).map { m -> m + if (m in models) " ✓" else " ✕" }
                 s.msg = "키 유효 · 모델 ${models.size}개"
                 s.detail = have.joinToString("\n")
             }.state == "ok"
-            for (m in Gemini.MODELS) {
+            for (m in Gemini.order(ctx)) {
                 if (!keyOk) { skip("AI · $m", "키 확인이 안 돼서 못 함"); continue }
                 step("AI · $m") { s ->
                     val t0 = System.currentTimeMillis()

@@ -18,14 +18,41 @@ object Gemini {
     const val MODEL = "gemini-flash-latest"
     /** 차례로 시도: 최신 → 안정판 → 가벼운 것 */
     val CATEGORIES = listOf("여행", "맛집", "요리", "쇼핑", "디자인", "개발·IT", "공부", "운동·건강", "영화·책", "게임", "음악", "생활팁", "기타")
-    /** 붐비는 최신 모델은 맨 뒤로: 안정판 → 가벼운 것 → 최신 */
-    val MODELS = listOf("gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-flash-latest")
+    /**
+     * 쓸 모델 순서. 이름을 고정하지 않고, 하루 한 번 받은 "쓸 수 있는 모델 목록"에서 고른다.
+     * 빠르게(기본): flash-lite → 최신 flash → 가장 새 flash 번호 모델 / 꼼꼼하게: 최신 flash 먼저.
+     */
+    fun speed(ctx: Context) = sp(ctx).getString("speed", "fast") ?: "fast"
+    fun setSpeed(ctx: Context, v: String) = sp(ctx).edit().putString("speed", v).apply()
+
+    private fun available(ctx: Context): List<String> {
+        val at = sp(ctx).getLong("modelsAt", 0)
+        if (System.currentTimeMillis() - at > 24 * 3600 * 1000L) try {
+            val list = listModels(ctx)
+            if (list.isNotEmpty()) sp(ctx).edit().putString("models", list.joinToString(",")).putLong("modelsAt", System.currentTimeMillis()).apply()
+        } catch (_: Throwable) {}
+        return (sp(ctx).getString("models", "") ?: "").split(",").filter { it.isNotBlank() }
+    }
+    fun forget(ctx: Context, model: String) {
+        val l = (sp(ctx).getString("models", "") ?: "").split(",").filter { it.isNotBlank() && it != model }
+        sp(ctx).edit().putString("models", l.joinToString(",")).apply()
+    }
+    fun order(ctx: Context): List<String> {
+        val have = available(ctx)
+        val newest = have.filter { Regex("^gemini-[0-9.]+-flash$").matches(it) }
+            .sortedByDescending { it.removePrefix("gemini-").removeSuffix("-flash").split(".").map { p -> p.toIntOrNull() ?: 0 }.let { v -> v.getOrElse(0) { 0 } * 1000 + v.getOrElse(1) { 0 } } }
+            .firstOrNull()
+        val base = if (speed(ctx) == "smart") listOf("gemini-flash-latest", "gemini-flash-lite-latest") else listOf("gemini-flash-lite-latest", "gemini-flash-latest")
+        val want = (base + listOfNotNull(newest)).distinct()
+        val ok = if (have.isEmpty()) want else want.filter { it in have }
+        return ok.ifEmpty { want }
+    }
 
     class HttpErr(val code: Int, msg: String) : IllegalStateException(msg)
     /** 실패해도 기록(log)은 남김 */
     class AiFail(msg: String, val log: JSONObject) : IllegalStateException(msg)
 
-    fun label(m: String) = when (m) { "gemini-flash-latest" -> "최신 flash"; "gemini-2.5-flash" -> "2.5 flash"; "gemini-flash-lite-latest" -> "flash-lite"; else -> m }
+    fun label(m: String) = when (m) { "gemini-flash-latest" -> "최신 flash"; "gemini-flash-lite-latest" -> "flash-lite"; else -> m.removePrefix("gemini-") }
 
     /** 마지막 요청의 시간 나눔: connect · send · wait(첫 답까지) · read · server(구글 처리) */
     @Volatile var last: JSONObject = JSONObject()
@@ -59,6 +86,7 @@ object Gemini {
         fun json(usage: JSONObject?, extraWhy: List<String> = emptyList()): JSONObject {
             val total = System.currentTimeMillis() - t0
             val why = mutableListOf<String>()
+            if (total < 10000) return JSONObject().put("total", total).put("rows", rows).put("usage", usage ?: JSONObject()).put("why", JSONArray())
             var upload = 0L; var wait = 0L; var fails = 0; var genOk = 0L
             for (i in 0 until rows.length()) {
                 val r = rows.getJSONObject(i)
@@ -294,7 +322,7 @@ object Gemini {
                 .put("responseSchema", schema())
                 .put("temperature", 0.3))
         onStage(if (withVideo) "받아쓰는 중" else "정리 중")
-        val (text, used) = generate(key, req, onStage, log, withVideo)
+        val (text, used) = generate(ctx, key, req, onStage, log, withVideo)
         count(ctx)
         val res = JSONObject(text)
         val um = res.optJSONObject("usageMetadata")
@@ -320,12 +348,16 @@ object Gemini {
      * 모델마다 최대 3번(2초 · 5초 쉬고). 응답 없음(글만 40초 · 영상 120초)이면 바로 다음 모델로.
      * 키 문제(키 틀림 400 · 401 · 403)는 바로 멈춤. 생각 과정은 끔(2.5 모델).
      */
-    private fun generate(key: String, req: JSONObject, onStage: (String) -> Unit, log: RunLog, withVideo: Boolean): Pair<String, String> {
+    private fun generate(ctx: Context, key: String, req: JSONObject, onStage: (String) -> Unit, log: RunLog, withVideo: Boolean): Pair<String, String> {
         val tried = StringBuilder()
         val limit = if (withVideo) 120000 else 40000
-        for ((mi, model) in MODELS.withIndex()) {
+        val models = order(ctx)
+        for ((mi, model) in models.withIndex()) {
             val body = JSONObject(req.toString())
-            if (model.startsWith("gemini-2.5")) body.getJSONObject("generationConfig").put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
+            // 생각 과정: 2.x 는 끔(thinkingBudget 0). 3.x 이상 · lite 는 기본값 그대로 (lite 는 원래 생각을 거의 안 함)
+            val gc = body.getJSONObject("generationConfig")
+            val ver = Regex("^gemini-([0-9]+)").find(model)?.groupValues?.get(1)?.toIntOrNull()
+            if (ver == 2) gc.put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
             for (attempt in 0 until 3) {
                 checkCancel()
                 onStage("${label(model)}로 정리 중" + if (attempt > 0) " (${attempt + 1}번째)" else "")
@@ -348,7 +380,8 @@ object Gemini {
                     val timeout = e is java.net.SocketTimeoutException
                     val skipModel = timeout || (e is HttpErr && (e.code == 400 || e.code == 404 || e.code == 429))
                     val shortMsg = if (timeout) "${limit / 1000}초 응답 없음" else short
-                    val next = MODELS.getOrNull(mi + 1)
+                    if (e is HttpErr && e.code == 404) forget(ctx, model)
+                    val next = models.getOrNull(mi + 1)
                     if (attempt < 2 && !skipModel) {
                         onStage("${label(model)} 안 됨 ($shortMsg) → 같은 모델로 다시 시도")
                         Thread.sleep(if (attempt == 0) 2000 else 5000)

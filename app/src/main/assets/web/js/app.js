@@ -608,6 +608,8 @@
       <div class="group">
         <button class="row" id="sAiOn" ${s.hasKey ? '' : 'disabled'}><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/></svg></span><span class="rt">AI 정리</span><span class="sw${s.aiOn ? ' on' : ''}"></span></button>
         <label class="field keyf"><input id="sKey" type="password" placeholder=" " autocomplete="off"><span>${s.hasKey ? 'Gemini API 키 (••••' + esc(s.keyTail) + ')' : 'Gemini API 키 붙여넣기'}</span></label>
+        <div class="row stack"><div class="rhead"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M13 3L4 14h7l-1 7 9-11h-7z"/></svg></span><span class="rt">AI 모델</span></div>
+          <div class="seg" id="sSpeed"><i style="width:calc((100% - 6px) / 2);transform:translateX(${s.aiSpeed === 'smart' ? 100 : 0}%)"></i><button data-sp="fast" class="${s.aiSpeed !== 'smart' ? 'on' : ''}">빠르게</button><button data-sp="smart" class="${s.aiSpeed === 'smart' ? 'on' : ''}">꼼꼼하게</button></div></div>
         <div class="row"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span><span class="rt">이번 달 사용</span><span class="rv">${s.aiUsed || 0}회</span></div>
         ${s.batteryOpt ? `<button class="row" id="sBat"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 11v2M7 10v4"/></svg></span><span class="rt">배터리 최적화 끄기</span><span class="rv">뒤에서도 빠르게</span></button>` : ''}
         <button class="row" id="sAiAll"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></span><span class="rt">저장한 것 AI 정리</span><span class="rv">${aiN}개</span></button>
@@ -752,6 +754,7 @@
       chk.classList.toggle('on', a.includes(n)); A.update(cur, JSON.stringify({ checks: it.checks })); return;
     }
     const sk = t.closest('[data-seek]'); if (sk) { const v = $('#dVideo'); if (v) { v.currentTime = +sk.dataset.seek; v.play(); $('#dScroll').scrollTo({ top: 0, behavior: 'smooth' }); } else toast('영상을 저장하지 않은 메모예요'); return; }
+    const sp = t.closest('[data-sp]'); if (sp) { A.setAiSpeed(sp.dataset.sp); const bs = [...$('#sSpeed').querySelectorAll('button')]; bs.forEach(b => b.classList.toggle('on', b === sp)); $('#sSpeed i').style.transform = `translateX(${bs.indexOf(sp) * 100}%)`; return; }
     if (t.closest('#sBat')) { A.batteryUnrestrict(); return; }
     if (t.closest('#sAiOn')) { const on = !t.closest('#sAiOn').classList.contains('on'); A.setAiOn(on); renderSettings(); return; }
     if (t.closest('#sAiAll')) {
@@ -875,7 +878,7 @@
       update: () => '', remove: () => {}, retry: () => {}, capture: () => '', removeCapture: () => '',
       open: () => {}, copy: () => {}, shareText: () => {}, exportFile: () => {},
       settings: () => JSON.stringify({ quality: '720', igLogin: false, used: 1.2e9, tool: '2026.11.01', app: '0.1' }),
-      setQuality: () => {}, refetchComments: () => {}, setGeminiKey: () => {}, setAiOn: () => {}, aiRedo: () => {}, aiCancel: () => {}, batteryUnrestrict: () => {}, removeMany: () => {}, updateMany: () => {},
+      setQuality: () => {}, refetchComments: () => {}, setGeminiKey: () => {}, setAiOn: () => {}, aiRedo: () => {}, aiCancel: () => {}, batteryUnrestrict: () => {}, setAiSpeed: () => {}, removeMany: () => {}, updateMany: () => {},
       meta: () => localStorage.meta || JSON.stringify({ folders: [{ id: 'f1', name: '여행', parent: null }, { id: 'f2', name: '나트랑', parent: 'f1' }, { id: 'f3', name: '디자인', parent: null }], order: [] }),
       setMeta: (j) => { localStorage.meta = j; },
       diag: (u) => { const st = [['링크 종류', 'ok', '인스타 · 게시물 abc'], ['인터넷 연결', 'ok', '응답 200'], ['인스타 로그인', 'ok', '로그인됨'], ['내용 읽기 (yt-dlp)', 'ok', '제목 ✓ · 설명 320자'], ['댓글 가져오기', 'fail', '[화면] HTTP 403']];
