@@ -26,6 +26,31 @@
   let fTop = '';           // 고른 큰 폴더 id ('' = 전체)
   let fSub = '';           // 고른 작은 폴더 id ('' = 큰 폴더 전체)
   let selecting = false;
+  let cat = '';            // 고른 큰 키워드(갈래)
+  const CAT_IC = {
+    '여행': '<path d="M3 13l18-7-7 18-2-8z"/>',
+    '맛집': '<path d="M7 3v8a2 2 0 0 0 4 0V3M9 11v10M16 3c-2 0-3 3-3 6s1 4 3 4v8"/>',
+    '요리': '<path d="M4 11h16v2a7 7 0 0 1-14 0zM8 7c0-2 2-2 2-4M13 7c0-2 2-2 2-4"/>',
+    '쇼핑': '<path d="M6 8h12l-1 12H7zM9 8a3 3 0 0 1 6 0"/>',
+    '디자인': '<path d="M12 3a9 9 0 1 0 0 18c1 0 1.5-1 1-2s0-2 1.5-2H17a4 4 0 0 0 4-4c0-5-4-10-9-10z"/><circle cx="8" cy="11" r="1"/><circle cx="12" cy="7.5" r="1"/>',
+    '개발·IT': '<path d="M8 8l-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/>',
+    '공부': '<path d="M3 7l9-4 9 4-9 4zM7 9v5c3 2 7 2 10 0V9"/>',
+    '운동·건강': '<path d="M4 9v6M20 9v6M7 7v10M17 7v10M7 12h10"/>',
+    '영화·책': '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/>',
+    '게임': '<rect x="3" y="8" width="18" height="10" rx="4"/><path d="M8 11v4M6 13h4M16 12h.01M18 14h.01"/>',
+    '음악': '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+    '생활팁': '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/>',
+    '기타': '<circle cx="6" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="18" cy="12" r="1.5"/>',
+  };
+  function renderCats() {
+    const n = {};
+    items.forEach(it => { if (it.status === 'done' && it.category && inFilter(it)) n[it.category] = (n[it.category] || 0) + 1; });
+    let list = Object.keys(n).sort((a, b) => n[b] - n[a]).slice(0, 8);
+    if (cat && !list.includes(cat)) list = list.slice(0, 7).concat(cat);
+    const el = $('#cats');
+    el.classList.toggle('hide', list.length === 0);
+    el.innerHTML = list.map(c => `<button class="kt${c === cat ? ' on' : ''}" data-cat="${esc(c)}"><svg class="ic" viewBox="0 0 24 24">${CAT_IC[c] || CAT_IC['기타']}</svg><b>${esc(c)}</b><small>${n[c] || 0}</small></button>`).join('');
+  }
   const sel = new Set();
 
   function load() {
@@ -49,6 +74,7 @@
 
   function matches(it) {
     if (!inFilter(it)) return false;
+    if (cat && it.category !== cat) return false;
     if (!query) return true;
     const q = query.toLowerCase();
     const ai = it.ai || {};
@@ -108,6 +134,7 @@
 
   function renderHome() {
     renderChips();
+    renderCats();
     $('#jobs').innerHTML = selecting ? '' : items.filter(it => it.status === 'saving' || it.status === 'error').map(jobHtml).join('');
     const list = visible();
     // 두 줄에 높이가 비슷하게 나누기 (순서대로 왼쪽 · 오른쪽 중 짧은 쪽)
@@ -576,12 +603,13 @@
     let s = {}; try { s = JSON.parse(A.settings()); } catch (e) {}
     const qs = [['480', '480p'], ['720', '720p'], ['1080', '1080p'], ['best', '최고']];
     const qi = Math.max(0, qs.findIndex(q => q[0] === s.quality));
-    const aiN = items.filter(x => x.status === 'done' && !x.ai).length;
+    const aiN = items.filter(x => x.status === 'done' && (!x.ai || !x.category)).length;
     $('#sScroll').innerHTML = `
       <div class="group">
         <button class="row" id="sAiOn" ${s.hasKey ? '' : 'disabled'}><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/></svg></span><span class="rt">AI 정리</span><span class="sw${s.aiOn ? ' on' : ''}"></span></button>
         <label class="field keyf"><input id="sKey" type="password" placeholder=" " autocomplete="off"><span>${s.hasKey ? 'Gemini API 키 (••••' + esc(s.keyTail) + ')' : 'Gemini API 키 붙여넣기'}</span></label>
         <div class="row"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span><span class="rt">이번 달 사용</span><span class="rv">${s.aiUsed || 0}회</span></div>
+        ${s.batteryOpt ? `<button class="row" id="sBat"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 11v2M7 10v4"/></svg></span><span class="rt">배터리 최적화 끄기</span><span class="rv">뒤에서도 빠르게</span></button>` : ''}
         <button class="row" id="sAiAll"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></span><span class="rt">저장한 것 AI 정리</span><span class="rv">${aiN}개</span></button>
       </div>
       <div class="group">
@@ -696,6 +724,7 @@
     const t = e.target;
     if (lpFired) { lpFired = false; return; }
     const card = t.closest('.card'); if (card) return selecting ? toggleSel(card.dataset.id) : openDetail(card.dataset.id);
+    const ct = t.closest('[data-cat]'); if (ct) { cat = cat === ct.dataset.cat ? '' : ct.dataset.cat; renderHome(); return; }
     const ft = t.closest('[data-ft]'); if (ft) { fTop = ft.dataset.ft; fSub = ''; renderHome(); return; }
     const fs = t.closest('[data-fs]'); if (fs) { fSub = fs.dataset.fs; renderHome(); return; }
     const mv = t.closest('[data-mv]'); if (mv) return moveTo(mv.dataset.mv);
@@ -723,9 +752,10 @@
       chk.classList.toggle('on', a.includes(n)); A.update(cur, JSON.stringify({ checks: it.checks })); return;
     }
     const sk = t.closest('[data-seek]'); if (sk) { const v = $('#dVideo'); if (v) { v.currentTime = +sk.dataset.seek; v.play(); $('#dScroll').scrollTo({ top: 0, behavior: 'smooth' }); } else toast('영상을 저장하지 않은 메모예요'); return; }
+    if (t.closest('#sBat')) { A.batteryUnrestrict(); return; }
     if (t.closest('#sAiOn')) { const on = !t.closest('#sAiOn').classList.contains('on'); A.setAiOn(on); renderSettings(); return; }
     if (t.closest('#sAiAll')) {
-      const todo = items.filter(x => x.status === 'done' && !x.ai);
+      const todo = items.filter(x => x.status === 'done' && (!x.ai || !x.category));
       if (!todo.length) { toast('정리할 메모가 없어요'); return; }
       return confirmAsk(todo.length + '개를 AI로 정리할까요?', '정리하기', () => { todo.forEach(x => { x.aiBusy = 'AI 대기 중'; A.aiRedo(x.id); }); toast('하나씩 정리할게요'); renderHome(); });
     }
@@ -828,14 +858,14 @@
   function devBridge() {
     const now = Date.now();
     let data = [
-      { id: 'a', url: 'https://www.instagram.com/reel/x', platform: 'instagram', kind: '릴스', status: 'done',
+      { id: 'a', url: 'https://www.instagram.com/reel/x', platform: 'instagram', kind: '릴스', status: 'done', category: '여행',
         ai: { summary: ['체크아웃 후 콩카페 → 반쎄오 → 야시장 코스', '중간에 다른 메뉴 섞기 추천'], folder: '여행 › 나트랑', kind: 'recipe', recipe: { ingredients: ['감자 2개', '올리브유 1큰술'], steps: ['찬물에 10분', '200도 10분'] },
           tips: [{ text: '6시 전에 가야 웨이팅 없음', from: 'author', who: 'yytable' }], model: 'gemini-2.5-flash',
           log: { total: 112000, rows: [{ step: '영상 올리기', ms: 8200, note: '12.3MB', ok: true }, { step: '영상 처리 대기', ms: 14000, note: '확인 7번', ok: true }, { step: '최신 flash #1', ms: 1200, note: '503 구글 서버가 바빠요(모델 혼잡) → 잠시 뒤 또는 다른 모델', ok: false }, { step: '2.5 flash #1', ms: 88000, note: '성공', ok: true }],
             usage: { totalTokenCount: 21000, promptTokenCount: 18000, videoTokens: 15000, thoughtsTokenCount: 2400, candidatesTokenCount: 600 }, why: ['실패 1번 → 다시 시도 · 다른 모델로 넘어감', 'AI가 답하기 전에 오래 생각함 (생각 2400 · 답 600 토큰)', '영상이 길어서 볼 양이 많음 (영상 15000 토큰)'] }, transcript: [{ t: 0, text: '오늘은 나트랑 3일차' }, { t: 12, text: '콩카페 먼저 가요' }] }, title: '나트랑 시내 맛집 4곳 추천', author: 'yytable', desc: '나트랑 시내에서 현지인이 많이 가는 식당 4곳!\n1. Lai Seafood\n2. Ớt Hiểm Thai Cuisine', duration: 48, w: 720, h: 1280, memo: '12월 여행 때 저녁', tags: ['여행'], createdAt: now,
         comments: [{ a: 'traveler_kim', t: '저녁 6시 전에 가야 웨이팅 없어요', l: 312, r: [{ a: 'yytable', t: '맞아요! 6시 넘으면 30분 넘게 기다려요', l: 20, own: true }] }, { a: 'minji', t: '저장해둡니다', l: 54 }], captures: [] },
-      { id: 'b', url: 'https://youtube.com/shorts/y', platform: 'youtube', kind: '쇼츠', status: 'done', title: '피그마 아이콘 파일 50개 이상 무료 배포', author: 'figma.create', desc: '댓글에 icon 남기면 보내드려요', duration: 35, w: 720, h: 1280, tags: ['디자인'], createdAt: now, comments: [], commentError: '[화면] HTTP 403 login_required\n[직접] HTTP 403', captures: [] },
-      { id: 'c', url: 'https://brunch.co.kr/z', platform: 'web', kind: '웹', status: 'done', title: '홈카페 라떼아트 기초', author: 'brunch.co.kr', desc: '', body: '우유 온도는 60도가 좋아요.', tags: [], createdAt: now, comments: [], captures: [] },
+      { id: 'b', url: 'https://youtube.com/shorts/y', platform: 'youtube', kind: '쇼츠', status: 'done', category: '디자인', title: '피그마 아이콘 파일 50개 이상 무료 배포', author: 'figma.create', desc: '댓글에 icon 남기면 보내드려요', duration: 35, w: 720, h: 1280, tags: ['디자인'], createdAt: now, comments: [], commentError: '[화면] HTTP 403 login_required\n[직접] HTTP 403', captures: [] },
+      { id: 'c', url: 'https://brunch.co.kr/z', platform: 'web', kind: '웹', status: 'done', category: '요리', title: '홈카페 라떼아트 기초', author: 'brunch.co.kr', desc: '', body: '우유 온도는 60도가 좋아요.', tags: [], createdAt: now, comments: [], captures: [] },
       { id: 'd', url: 'https://www.instagram.com/reel/z', platform: 'instagram', status: 'saving', stage: '영상 받는 중', progress: 62, createdAt: now },
       { id: 'e', url: 'https://www.instagram.com/reel/q', platform: 'instagram', status: 'error', error: '인스타 로그인이 필요해요', errorDetail: 'ERROR: login required', createdAt: now },
     ];
@@ -845,7 +875,7 @@
       update: () => '', remove: () => {}, retry: () => {}, capture: () => '', removeCapture: () => '',
       open: () => {}, copy: () => {}, shareText: () => {}, exportFile: () => {},
       settings: () => JSON.stringify({ quality: '720', igLogin: false, used: 1.2e9, tool: '2026.11.01', app: '0.1' }),
-      setQuality: () => {}, refetchComments: () => {}, setGeminiKey: () => {}, setAiOn: () => {}, aiRedo: () => {}, aiCancel: () => {}, removeMany: () => {}, updateMany: () => {},
+      setQuality: () => {}, refetchComments: () => {}, setGeminiKey: () => {}, setAiOn: () => {}, aiRedo: () => {}, aiCancel: () => {}, batteryUnrestrict: () => {}, removeMany: () => {}, updateMany: () => {},
       meta: () => localStorage.meta || JSON.stringify({ folders: [{ id: 'f1', name: '여행', parent: null }, { id: 'f2', name: '나트랑', parent: 'f1' }, { id: 'f3', name: '디자인', parent: null }], order: [] }),
       setMeta: (j) => { localStorage.meta = j; },
       diag: (u) => { const st = [['링크 종류', 'ok', '인스타 · 게시물 abc'], ['인터넷 연결', 'ok', '응답 200'], ['인스타 로그인', 'ok', '로그인됨'], ['내용 읽기 (yt-dlp)', 'ok', '제목 ✓ · 설명 320자'], ['댓글 가져오기', 'fail', '[화면] HTTP 403']];

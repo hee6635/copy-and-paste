@@ -17,6 +17,7 @@ import java.util.Locale
 object Gemini {
     const val MODEL = "gemini-flash-latest"
     /** 차례로 시도: 최신 → 안정판 → 가벼운 것 */
+    val CATEGORIES = listOf("여행", "맛집", "요리", "쇼핑", "디자인", "개발·IT", "공부", "운동·건강", "영화·책", "게임", "음악", "생활팁", "기타")
     val MODELS = listOf("gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest")
 
     class HttpErr(val code: Int, msg: String) : IllegalStateException(msg)
@@ -25,6 +26,19 @@ object Gemini {
 
     fun label(m: String) = when (m) { "gemini-flash-latest" -> "최신 flash"; "gemini-2.5-flash" -> "2.5 flash"; "gemini-flash-lite-latest" -> "flash-lite"; else -> m }
 
+    /** 마지막 요청의 시간 나눔: connect · send · wait(첫 답까지) · read · server(구글 처리) */
+    @Volatile var last: JSONObject = JSONObject()
+    private fun sec(ms: Long) = if (ms < 1000) "${ms}ms" else String.format(java.util.Locale.US, "%.1f초", ms / 1000.0)
+    fun timingText(t: JSONObject): String {
+        val p = mutableListOf<String>()
+        if (t.has("connect")) p += "연결 " + sec(t.optLong("connect"))
+        if (t.has("send")) p += "보내기 " + sec(t.optLong("send"))
+        if (t.has("wait")) p += "첫 답까지 " + sec(t.optLong("wait"))
+        if (t.has("server")) p += "(그중 구글 처리 " + sec(t.optLong("server")) + ")"
+        if (t.has("read")) p += "받기 " + sec(t.optLong("read"))
+        return p.joinToString(" · ")
+    }
+
     // 중지: 지금 연결을 끊어서 기다림을 바로 끝냄
     @Volatile private var cancelled = false
     @Volatile private var current: HttpURLConnection? = null
@@ -32,11 +46,14 @@ object Gemini {
     private fun checkCancel() { if (cancelled) throw IllegalStateException("중지했어요") }
 
     /** 이번 정리 기록: 단계마다 걸린 시간 · 결과 */
-    class RunLog {
+    class RunLog(private val ctx: Context) {
         val t0 = System.currentTimeMillis()
         val rows = JSONArray()
-        fun add(step: String, ms: Long, note: String, ok: Boolean) {
-            rows.put(JSONObject().put("step", step).put("ms", ms).put("note", note).put("ok", ok))
+        var okTiming: JSONObject? = null
+        fun add(step: String, ms: Long, note: String, ok: Boolean, timing: JSONObject? = null) {
+            val r = JSONObject().put("step", step).put("ms", ms).put("note", note).put("ok", ok)
+            if (timing != null) r.put("t", timing)
+            rows.put(r)
         }
         fun json(usage: JSONObject?, extraWhy: List<String> = emptyList()): JSONObject {
             val total = System.currentTimeMillis() - t0
@@ -59,7 +76,20 @@ object Gemini {
             if (thoughts > outTok && thoughts > 500) why += "AI가 답하기 전에 오래 생각함 (생각 ${thoughts} · 답 ${outTok} 토큰)"
             val vidTok = usage?.optInt("videoTokens") ?: 0
             if (vidTok > 5000) why += "영상이 길어서 볼 양이 많음 (영상 ${vidTok} 토큰)"
-            if (genOk > 60000 && why.isEmpty()) why += "모델 응답 자체가 ${genOk / 1000}초 걸림 (서버 혼잡 가능)"
+            // 성공한 요청의 시간 나눔으로 "서버 쪽이냐 폰 · 인터넷 쪽이냐"를 가름
+            val t = okTiming
+            if (t != null && genOk > 20000) {
+                val wait = t.optLong("wait"); val server = t.optLong("server", -1)
+                when {
+                    server >= 0 && server > wait * 0.7 -> why += "구글 서버가 처리하는 데 ${server / 1000}초 (서버 혼잡) — 폰 · 인터넷 문제 아님"
+                    server >= 0 -> why += "구글 처리는 ${server / 1000}초뿐인데 답이 오기까지 ${wait / 1000}초 → 폰 · 인터넷 쪽에서 ${(wait - server) / 1000}초 지연"
+                    t.optLong("connect") > 5000 -> why += "서버에 연결하는 데만 ${t.optLong("connect") / 1000}초 (인터넷 느림 · 끊김)"
+                    else -> why += "첫 답까지 ${wait / 1000}초 (구글이 처리 시간을 안 알려 줘서 서버 · 폰 중 어디인지 불명)"
+                }
+            }
+            val evs = PhoneState.between(t0, System.currentTimeMillis())
+            if (evs.isNotEmpty()) why += "그동안 폰: " + evs.joinToString(", ") { "${(it.at - t0) / 1000}초에 ${it.what}" }
+            if (genOk > 20000) PhoneState.throttles(ctx).forEach { why += "폰 설정: $it" }
             why += extraWhy
             return JSONObject().put("total", total).put("rows", rows).put("usage", usage ?: JSONObject()).put("why", JSONArray(why))
         }
@@ -99,9 +129,18 @@ object Gemini {
         c.connectTimeout = 20000; c.readTimeout = timeout
         c.setRequestProperty("x-goog-api-key", key)
         headers.forEach { (k, v) -> c.setRequestProperty(k, v) }
-        if (body != null) { c.doOutput = true; c.outputStream.use { it.write(body) } }
+        val tm = JSONObject(); last = tm
+        val t0 = System.currentTimeMillis()
+        if (body != null) c.doOutput = true
+        c.connect(); val t1 = System.currentTimeMillis(); tm.put("connect", t1 - t0)
+        if (body != null) c.outputStream.use { it.write(body) }
+        val t2 = System.currentTimeMillis(); tm.put("send", t2 - t1)
         val code = c.responseCode
+        val t3 = System.currentTimeMillis(); tm.put("wait", t3 - t2)
         val text = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
+        tm.put("read", System.currentTimeMillis() - t3)
+        // 구글이 알려 주는 "서버에서 실제로 처리한 시간"
+        c.getHeaderField("server-timing")?.let { st -> Regex("dur=([0-9.]+)").find(st)?.groupValues?.get(1)?.toDoubleOrNull()?.let { tm.put("server", it.toLong()) } }
         if (code !in 200..299) {
             val msg = try { JSONObject(text).optJSONObject("error")?.optString("message") } catch (_: Exception) { null } ?: text.take(200)
             throw HttpErr(code, when (code) {
@@ -162,6 +201,7 @@ object Gemini {
 - summary: 핵심 1~3줄. 각 줄 40자 안팎. 광고 문구 · 해시태그 · "저장하세요" 같은 말은 빼고 정보만.
 - tags: 2~5개, # 없이 짧은 명사 (지명 · 음식 · 주제).
 - folder: 아래 "내 폴더" 중 가장 맞는 것의 경로를 그대로 쓰기. 맞는 게 없으면 "큰폴더 › 작은폴더" 또는 "큰폴더" 형식으로 새로 제안. 작은 폴더는 지명이나 구체 주제일 때만.
+- category: 아래 목록 중 딱 하나 (큰 갈래): ${CATEGORIES.joinToString(", ")}
 - kind: 요리법이면 recipe, 할 일 · 준비물 목록이면 checklist, 그 밖은 general.
 - recipe: kind 가 recipe 일 때만. 재료(양 포함)와 순서.
 - checklist: kind 가 checklist 일 때만.
@@ -203,12 +243,13 @@ object Gemini {
             "tags" to arr(str()),
             "folder" to str(),
             "kind" to JSONObject().put("type", "STRING").put("enum", JSONArray(listOf("recipe", "checklist", "general"))),
+            "category" to JSONObject().put("type", "STRING").put("enum", JSONArray(CATEGORIES)),
             "recipe" to obj("ingredients" to arr(str()), "steps" to arr(str())),
             "checklist" to arr(str()),
             "tips" to arr(obj("text" to str(), "from" to str(), "who" to str(), req = listOf("text"))),
             "star" to arr(JSONObject().put("type", "INTEGER")),
             "transcript" to arr(obj("t" to JSONObject().put("type", "NUMBER"), "text" to str(), req = listOf("t", "text"))),
-            req = listOf("summary", "tags", "folder", "kind", "tips", "star", "transcript")
+            req = listOf("summary", "tags", "folder", "kind", "category", "tips", "star", "transcript")
         )
     }
 
@@ -217,7 +258,7 @@ object Gemini {
         val key = key(ctx)
         if (key.isEmpty()) throw IllegalStateException("Gemini API 키가 없어요 (설정에서 넣어 주세요)")
         cancelled = false
-        val log = RunLog()
+        val log = RunLog(ctx)
         return try { organizeImpl(ctx, key, item, folders, onStage, log) }
         catch (e: Throwable) { throw AiFail(if (cancelled) "중지했어요" else explain(e), log.json(null)) }
     }
@@ -272,13 +313,15 @@ object Gemini {
                 try {
                     val (_, t) = http("POST", "$BASE/v1beta/models/$model:generateContent", key,
                         req.toString().toByteArray(), mapOf("Content-Type" to "application/json"), 300000)
-                    log.add("${label(model)} #${attempt + 1}", System.currentTimeMillis() - t0, "성공", true)
+                    val tm = last
+                    log.okTiming = tm
+                    log.add("${label(model)} #${attempt + 1}", System.currentTimeMillis() - t0, "성공 · " + timingText(tm), true, tm)
                     return t to model
                 } catch (e: Throwable) {
                     if (cancelled) throw e
                     val why = explain(e)
                     val short = why.substringBefore(" →")
-                    log.add("${label(model)} #${attempt + 1}", System.currentTimeMillis() - t0, why, false)
+                    log.add("${label(model)} #${attempt + 1}", System.currentTimeMillis() - t0, why + " · " + timingText(last), false, last)
                     tried.append("${label(model)} #${attempt + 1}: $why\n")
                     if (e is HttpErr && e.code in listOf(400, 401, 403)) throw IllegalStateException(tried.toString().trim())
                     val skipModel = e is HttpErr && (e.code == 404 || e.code == 429)

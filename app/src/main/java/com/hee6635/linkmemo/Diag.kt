@@ -184,6 +184,7 @@ object Diag {
                 if (cm.restrictBackgroundStatus == android.net.ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED) t += "데이터 절약 켜짐"
                 val pdns = if (android.os.Build.VERSION.SDK_INT >= 28) cm.getLinkProperties(cm.activeNetwork)?.privateDnsServerName else null
                 if (pdns != null) t += "개인 DNS $pdns"
+                t += PhoneState.throttles(ctx)
                 s.msg = t.joinToString(" · ").ifEmpty { "알 수 없음" }
                 if (!ok) throw IllegalStateException(s.msg + " · 인터넷 확인 안 됨(로그인 화면이 필요한 와이파이일 수 있어요)")
             }
@@ -207,6 +208,7 @@ object Diag {
                     val t0 = System.currentTimeMillis()
                     val r = try { Gemini.pingModel(ctx, m) } catch (e: Throwable) { throw IllegalStateException(Gemini.explain(e)) }
                     s.msg = "응답 \"$r\" · ${System.currentTimeMillis() - t0}ms"
+                    s.detail = Gemini.timingText(Gemini.last)
                 }
             }
             if (keyOk) step("AI · 영상 올리기 통로") { s ->

@@ -321,3 +321,14 @@ body.selecting .card .ck{display:flex}
 .lr.total{font-size:14px}
 .whys{border-top:1px solid var(--line);padding-top:8px;margin-top:2px;font-size:13px;line-height:1.6;color:var(--sub)}
 .whys b{display:block;color:var(--fg);margin-bottom:2px}
+
+/* 큰 키워드 (갈래): 폰 4칸 · 넓은 화면 8칸 한 줄 */
+.kgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px 16px 2px}
+@media (min-width:600px){.kgrid{grid-template-columns:repeat(8,minmax(0,1fr))}}
+.kt{height:74px;border-radius:18px;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;transition:background .25s var(--ease),color .25s,transform .15s;-webkit-user-select:none;user-select:none}
+.kt:active{transform:scale(.95)}
+.kt .ic{width:24px;height:24px}
+.kt b{font-size:13px;font-weight:700;white-space:nowrap}
+.kt small{font-size:11px;color:var(--muted);margin-top:-3px}
+.kt.on{background:var(--fg);color:var(--bg)}
+.kt.on small{color:var(--muted)}

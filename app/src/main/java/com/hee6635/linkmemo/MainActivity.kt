@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (!SaveService.alive) Store.fixStale(this)
+        PhoneState.start(this)
         web = WebView(this)
         setContentView(web)
         ViewCompat.setOnApplyWindowInsetsListener(web) { v, insets ->
@@ -107,6 +108,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        PhoneState.setForeground(true)
         if (pageReady) js("App.onResume&&App.onResume()")
     }
 
@@ -282,6 +284,7 @@ class MainActivity : ComponentActivity() {
                 .put("hasKey", Gemini.key(ctx).isNotEmpty())
                 .put("keyTail", Gemini.key(ctx).takeLast(4))
                 .put("aiUsed", Gemini.usedThisMonth(ctx))
+                .put("batteryOpt", !getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(packageName))
                 .toString()
         }
 
@@ -290,6 +293,12 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun setAiOn(v: Boolean) = Gemini.setOn(ctx, v)
         @JavascriptInterface fun aiRedo(id: String) = SaveService.start(ctx, id, "ai")
         @JavascriptInterface fun aiCancel() = Gemini.cancel()
+        /** 배터리 최적화 해제 요청 (뒤에서도 통신이 늦어지지 않게) */
+        @JavascriptInterface fun batteryUnrestrict() {
+            try {
+                startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+            } catch (_: Exception) { startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+        }
 
         @JavascriptInterface fun igLogin() = startActivity(Intent(ctx, LoginActivity::class.java))
 
@@ -352,6 +361,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
     }
+
+    override fun onPause() { PhoneState.setForeground(false); super.onPause() }
 
     override fun onDestroy() {
         if (Events.listener != null) Events.listener = null

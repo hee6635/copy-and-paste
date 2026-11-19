@@ -196,6 +196,7 @@ class SaveService : Service() {
             }
             emit(Store.patch(this, id) { o ->
                 o.put("ai", ai)
+                ai.optString("category").takeIf { it.isNotEmpty() }?.let { o.put("category", it) }
                 // 자동 태그: 있는 태그에 더하기
                 val tags = o.optJSONArray("tags") ?: JSONArray()
                 val have = (0 until tags.length()).map { tags.getString(it) }.toMutableSet()
