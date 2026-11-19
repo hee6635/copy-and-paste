@@ -48,7 +48,7 @@ object PhoneState {
         } catch (_: Throwable) {}
     }
 
-    fun setForeground(v: Boolean) { foreground = v; mark(if (v) "앱 화면 앞으로" else "앱이 뒤로 감") }
+    fun markForeground(v: Boolean) { foreground = v; mark(if (v) "앱 화면 앞으로" else "앱이 뒤로 감") }
 
     /** 지금 폰 설정 중 통신을 늦출 수 있는 것 */
     fun throttles(ctx: Context): List<String> {

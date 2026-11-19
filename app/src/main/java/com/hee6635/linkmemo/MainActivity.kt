@@ -108,7 +108,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        PhoneState.setForeground(true)
+        PhoneState.markForeground(true)
         if (pageReady) js("App.onResume&&App.onResume()")
     }
 
@@ -362,7 +362,7 @@ class MainActivity : ComponentActivity() {
             }
     }
 
-    override fun onPause() { PhoneState.setForeground(false); super.onPause() }
+    override fun onPause() { PhoneState.markForeground(false); super.onPause() }
 
     override fun onDestroy() {
         if (Events.listener != null) Events.listener = null
