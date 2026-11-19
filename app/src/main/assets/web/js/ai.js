@@ -1,0 +1,205 @@
+'use strict';
+/* AI 정리 결과 · 쓰는 중 주르륵 · 기록 */
+// ── AI 정리 결과 ──
+function renderAi(it) {
+  const el = $('#dAi'); if (!el) return;
+  const ai = it.ai;
+  if (it.aiBusy) { liveRender(it); return; }
+  if (live) typeTok++;
+  live = null;
+  if (!ai) {
+    el.innerHTML = it.aiError ? `<div class="sec"><div class="cmtx"><b>AI 정리를 못 했어요</b><div class="why pre">${esc(String(it.aiError))}</div>
+      <div class="bt"><button class="chip dark" data-airedo>다시 정리</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>${logHtml(it.aiLog, true)}</div>` : '';
+    return;
+  }
+  let h = '';
+  const sum = ai.summary || [];
+  const places = (ai.places || []).filter(p => p && p.name);
+  const sugg = ai.folder && ai.folder.trim() && fPath(it.folder) !== ai.folder.trim() ? ai.folder.trim() : '';
+  const ck = it.checks || {};
+  const rec = ai.kind === 'recipe' && ai.recipe && ((ai.recipe.ingredients || []).length || (ai.recipe.steps || []).length) ? ai.recipe : null;
+  const runinfo = ai.log ? `<button class="runinfo" data-runlog>${fmtMs(ai.log.total)} · ${esc(mLabel(ai.model))}${(ai.log.why || []).length ? ' · 오래 걸린 이유 ' + ai.log.why.length : ''}<svg class="ic" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button><div class="runlog hide">${logHtml(ai.log)}</div>` : '';
+  const redo = '<button class="ai" data-airedo aria-label="다시 정리">AI ↻</button>';
+  const suggHtml = sugg ? `<div class="sugg"><div class="t">폴더 추천 <b>${esc(sugg)}</b></div><button data-sugg>옮기기</button></div>` : '';
+  const tipsTitle = places.length || rec ? '꼭 알아둘 팁' : '요약';
+  if (places.length) {
+    h += `<div class="sec"><div class="sh"><b>장소 ${places.length}</b>${redo}</div>${runinfo}${places.map((p, i) => placeRow(it, p, i)).join('')}</div>`;
+  } else if (rec) {
+    h += `<div class="sec"><div class="sh"><b>재료 ${(rec.ingredients || []).length}</b>${redo}</div>${runinfo}
+      <div class="ing">${(rec.ingredients || []).map((x, i) => `<button class="chk${(ck.i || []).includes(i) ? ' on' : ''}" data-chk="i:${i}"><i></i><span>${esc(x)}</span></button>`).join('')}</div></div>`;
+    if ((rec.steps || []).length) h += `<div class="sec"><div class="sh"><b>순서 ${rec.steps.length}</b></div>${rec.steps.map((x, i) => stepRow(it, x, i)).join('')}</div>`;
+  }
+  if (sum.length || sugg) {
+    const isTop = !places.length && !rec;
+    h += `<div class="sec"><div class="sh"><b>${tipsTitle}</b>${isTop ? redo : ''}</div>${isTop ? runinfo : ''}
+      ${isTop ? sum.map((x, i) => sumCard(it, x, i)).join('') : sum.map((x, i) => `<div class="tip3"><b>·</b><span>${rich(x)}</span></div>${attHtml(it, 'summary', i)}`).join('')}
+      ${suggHtml}</div>`;
+  }
+  const facts = (ai.facts || []).filter(f => f && f.text);
+  if (facts.length && !places.length) h += `<div class="sec"><div class="sh"><b>${ai.video ? '영상에서 뽑은 정보' : '핵심 정보'}</b><span class="ai">AI</span></div>
+    ${(ai.facts || []).map((f, i) => !f || !f.text ? '' : `<button class="ts" ${+f.t >= 0 ? `data-seek="${+f.t}"` : ''}>${+f.t >= 0 ? `<b>${fmtT(f.t)}</b>` : '<b>·</b>'}<span>${esc(f.text)}</span></button>${attHtml(it, 'facts', i)}`).join('')}</div>`;
+  if (ai.kind === 'checklist' && (ai.checklist || []).length) h += `<div class="sec"><div class="sh"><b>체크리스트</b><span class="ai">AI</span></div>
+    ${ai.checklist.map((x, i) => `<button class="chk${(ck.c || []).includes(i) ? ' on' : ''}" data-chk="c:${i}"><i></i><span>${esc(x)}</span></button>`).join('')}</div>`;
+  if (it.aiError) h += `<div class="sec"><div class="cmtx"><div class="why">다시 정리 실패: ${esc(String(it.aiError).split('\n')[0])}</div></div></div>`;
+  el.innerHTML = h;
+}
+
+/** [[핵심]] → 숫자 · 시간이면 노란 칩, 아니면 굵게만 */
+const CHIPY = /[0-9０-９]|오전|오후|아침|저녁|새벽|점심|밤|분|시간|원|동|달러|성급|박|일차/;
+const rich = s => esc(s).replace(/\[\[(.+?)\]\]/g, (m, x) => CHIPY.test(x) ? `<span class="chip2">${x}</span>` : `<b>${x}</b>`);
+/** 장소 한 줄: 사진(없으면 번호) · 이름 · 시각 · 핵심 정보 */
+function placeRow(it, p, i) {
+  const c = (it.captures || []).find(c => c.at && c.at.sec === 'places' && +c.at.i === i);
+  const th = c ? `<button class="th2" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><i>${i + 1}</i></button>` : `<div class="th2 n"><i>${i + 1}</i></div>`;
+  return `<div class="pr">${th}<div class="pb"><b><span>${esc(p.name)}</span>${+p.t >= 0 ? `<button class="tm" data-seek="${+p.t}">${fmtT(p.t)}</button>` : ''}</b><p>${rich(p.info || '')}</p></div></div>`;
+}
+function stepRow(it, x, i) {
+  const c = (it.captures || []).find(c => c.at && c.at.sec === 'steps' && +c.at.i === i);
+  const th = c ? `<button class="th2 s" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><i>${i + 1}</i></button>` : `<div class="th2 s n"><i>${i + 1}</i></div>`;
+  return `<div class="pr st">${th}<div class="pb"><p>${rich(x)}</p></div></div>`;
+}
+const plain = s => String(s || '').replace(/\[\[(.+?)\]\]/g, '$1');
+/** 요약 한 줄 = 카드 (붙은 첫 사진은 크게, 나머지는 작게) */
+function sumCard(it, x, i) {
+  const cs = (it.captures || []).filter(c => c.at && c.at.sec === 'summary' && +c.at.i === i);
+  const big = cs[0], rest = cs.slice(1);
+  return `<div class="scard">${big ? `<button class="sbig" data-cap="${esc(big.id)}"><img src="${fileUrl(it.id, big.file)}" alt=""><span class="tc">${fmtT(big.t)}</span>${big.ai ? '<span class="aib">AI</span>' : ''}</button>` : ''}
+    <div class="stx">${rich(x)}</div>${rest.length ? `<div class="att in">${rest.map(c => `<button class="shot" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}</button>`).join('')}</div>` : ''}</div>`;
+}
+
+// ── AI 가 쓰는 중: 설명 → 받아쓰기 → 중요한 줄 → 요약 카드 (주르륵) ──
+let live = null;
+function sliceKey(txt, key) {
+  const i = txt.indexOf('"' + key + '"'); if (i < 0) return null;
+  const keys = ['transcript', 'places', 'facts', 'summary', 'course', 'tips', 'keyshots', 'recipe', 'checklist', 'tags', 'folder', 'kind', 'category', 'star'];
+  let end = txt.length;
+  keys.forEach(k => { if (k === key) return; const j = txt.indexOf('"' + k + '"', i + 1); if (j > i && j < end) end = j; });
+  return txt.slice(i, end);
+}
+const unq = s => { try { return JSON.parse('"' + s + '"'); } catch (e) { return s.replace(/\\"/g, '"'); } };
+function parsePartial(txt) {
+  const out = { ts: [], facts: [], sum: [], course: [] };
+  const objs = sl => sl ? [...sl.matchAll(/\{\s*"t"\s*:\s*(-?[\d.]+)\s*,\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g)].map(m => ({ t: +m[1], text: unq(m[2]) })) : [];
+  const strs = sl => { if (!sl) return []; const b = sl.indexOf('['); if (b < 0) return []; return [...sl.slice(b).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map(m => unq(m[1])); };
+  const anyObjs = sl => { if (!sl) return []; const r = []; for (const m of sl.matchAll(/\{[^{}]*\}/g)) { try { r.push(JSON.parse(m[0])); } catch (e) {} } return r; };
+  out.places = anyObjs(sliceKey(txt, 'places')).filter(p => p && p.name);
+  out.ts = anyObjs(sliceKey(txt, 'transcript')).filter(x => x && x.text != null);
+  out.facts = objs(sliceKey(txt, 'facts'));
+  out.sum = strs(sliceKey(txt, 'summary'));
+  out.course = strs(sliceKey(txt, 'course'));
+  return out;
+}
+let typeQ = Promise.resolve(), typeTok = 0;
+function typeIn(el, text, cps) {
+  const tok = typeTok;
+  typeQ = typeQ.then(async () => {
+    if (tok !== typeTok || !el.isConnected) { el.textContent = text; return; }
+    el.classList.add('cursor');
+    const step = Math.max(1, Math.round(cps / 30));
+    for (let i = step; i < text.length; i += step) { if (tok !== typeTok || !el.isConnected) break; el.textContent = text.slice(0, i); await new Promise(r => setTimeout(r, 1000 / 30)); }
+    el.textContent = text; el.classList.remove('cursor');
+  });
+  return typeQ;
+}
+function liveRender(it) {
+  const el = $('#dAi');
+  if (live && live.id === it.id && el.querySelector('#lv')) { $('#lvSt').textContent = it.aiBusy; return; }
+  typeTok++; typeQ = Promise.resolve();
+  live = { id: it.id, ts: 0, sum: 0, course: 0, phase: 'raw', facts: 0 };
+  el.innerHTML = `<div id="lv"><div class="lvst"><span class="dot"></span><span id="lvSt">${esc(it.aiBusy)}</span><span class="elapsed" data-since="${it.aiBusyAt || Date.now()}">${since(it.aiBusyAt)}</span><button class="chip" data-aistop>중지</button></div>
+    ${it.desc || it.body ? '<div class="lvbox" id="lvDesc"><h4>설명</h4><div class="desc"></div></div>' : ''}
+    <div class="lvprog" id="lvProg"><i></i></div>
+    <div class="lvbox" id="lvTs"><h4>받아쓰기</h4><div id="lvTsList"><div class="watch"><i></i>영상 보는 중…</div></div></div>
+    <div class="sec lvpl hide" id="lvPlaces"><div class="sh"><b>장소</b></div></div>
+    <div class="sec lvpl hide" id="lvTips"><div class="sh"><b>꼭 알아둘 팁</b></div></div>
+    <div class="course" id="lvCourse"></div><div id="lvCards"></div></div>`;
+  const d = el.querySelector('#lvDesc .desc'); if (d) typeIn(d, (it.desc || it.body || '').slice(0, 320), 400);
+}
+function collapse(box) { if (!box || box.classList.contains('gone')) return; box.style.maxHeight = box.scrollHeight + 'px'; box.offsetHeight; box.classList.add('gone'); }
+function liveUpdate(txt) {
+  if (!live || !$('#lv')) return;
+  const p = parsePartial(txt);
+  const list = $('#lvTsList');
+  if (p.ts.length && list.querySelector('.watch')) list.innerHTML = '';
+  for (; live.ts < p.ts.length; live.ts++) {
+    const x = p.ts[live.ts];
+    // 폰이 먼저 읽은 같은 글자 줄은 AI 줄로 바꿈
+    const key = String(x.text).replace(/^\[화면\]\s*/, '').slice(0, 6);
+    list.querySelectorAll('.tl.ph').forEach(r => { if (key && r.dataset.k && (r.dataset.k.includes(key) || key.includes(r.dataset.k))) r.remove(); });
+    const row = document.createElement('div'); row.className = 'tl'; row.dataset.t = x.t;
+    row.innerHTML = `<b>${fmtT(x.t)}</b><span></span><small>AI</small>`;
+    const after = [...list.querySelectorAll('.tl')].find(r => +r.dataset.t > +x.t);
+    list.insertBefore(row, after || null);
+    typeIn(row.querySelector('span'), x.text + (x.ko ? '  → ' + x.ko : ''), 70);
+  }
+  // 정보가 나오면: 받아쓰기에서 그 시각 줄을 반짝
+  if (p.facts.length > live.facts) {
+    live.facts = p.facts.length;
+    typeQ = typeQ.then(() => {
+      const rows = [...document.querySelectorAll('#lvTsList .tl')];
+      rows.forEach(r => { const hit = p.facts.some(f => f.t >= 0 && Math.abs(f.t - +r.dataset.t) < 2); r.classList.toggle('hi', hit); r.classList.toggle('lo', !hit); });
+    });
+  }
+  // 장소가 나오면: 설명 · 받아쓰기를 접고 장소 표로
+  if ((p.places.length || p.sum.length) && live.phase === 'raw') {
+    live.phase = 'sum';
+    typeQ = typeQ.then(() => new Promise(r => setTimeout(r, 700))).then(() => { collapse($('#lvDesc')); collapse($('#lvTs')); collapse($('#lvProg')); });
+  }
+  const pdone = p.places.length - (/\}\s*\]/.test(sliceKey(txt, 'places') || '') ? 0 : 1);
+  for (live.pl = live.pl || 0; live.pl < Math.max(0, pdone); live.pl++) {
+    const pl = p.places[live.pl], i = live.pl;
+    typeQ = typeQ.then(() => new Promise(r => {
+      const box = $('#lvPlaces'); if (!box) return r();
+      box.classList.remove('hide'); box.querySelector('.sh b').textContent = '장소 ' + (i + 1);
+      const d = document.createElement('div'); d.innerHTML = placeRow({ id: '', captures: [] }, pl, i); const row = d.firstElementChild; row.classList.add('pop');
+      box.appendChild(row); setTimeout(r, 260);
+    }));
+  }
+  const done = p.sum.length - (/"\s*\]/.test(sliceKey(txt, 'summary') || '') ? 0 : 1);  // 마지막 줄은 끝날 때까지 기다림
+  for (; live.sum < Math.max(0, done); live.sum++) {
+    const x = p.sum[live.sum];
+    typeQ = typeQ.then(() => {
+      const usePl = live && live.pl > 0;
+      const c = document.createElement('div'); c.className = usePl ? 'tip3 pop' : 'scard pop'; c.innerHTML = usePl ? '<b>·</b><span class="stx"></span>' : '<div class="stx"></div>';
+      if (usePl) { const tb = $('#lvTips'); if (tb) { tb.classList.remove('hide'); tb.appendChild(c); } } else if ($('#lvCards')) $('#lvCards').appendChild(c);
+      const tx = c.querySelector('.stx'); tx.classList.add('cursor');
+      return new Promise(async r => { const t = plain(x); for (let i = 2; i < t.length; i += 2) { tx.textContent = t.slice(0, i); await new Promise(z => setTimeout(z, 33)); } tx.innerHTML = rich(x); tx.classList.remove('cursor'); r(); });
+    });
+  }
+  const cd = p.course.length - (/"\s*\]/.test(sliceKey(txt, 'course') || '') ? 0 : 1);
+  for (; live.course < Math.max(0, cd); live.course++) {
+    const i = live.course, name = p.course[i];
+    typeQ = typeQ.then(() => new Promise(r => {
+      const box = $('#lvCourse'); if (!box) return r();
+      if (i) { const e = document.createElement('em'); e.textContent = '→'; box.appendChild(e); }
+      const s2 = document.createElement('span'); s2.textContent = (i + 1) + ' ' + name; box.appendChild(s2);
+      requestAnimationFrame(() => s2.classList.add('on')); setTimeout(r, 160);
+    }));
+  }
+}
+
+const mLabel = m => ({ 'gemini-flash-latest': '최신 flash', 'gemini-2.5-flash': '2.5 flash', 'gemini-flash-lite-latest': 'flash-lite' }[m] || m || '');
+function fmtMs(ms) { const s = Math.round((ms || 0) / 1000); return s >= 60 ? Math.floor(s / 60) + '분 ' + (s % 60) + '초' : s + '초'; }
+function since(at) { return fmtMs(Date.now() - (at || Date.now())) + '째'; }
+/** 정리 기록: 단계별 시간 · 토큰 · 오래 걸린 이유 */
+function logHtml(log, open) {
+  if (!log) return '';
+  const u = log.usage || {};
+  const rows = (log.rows || []).map(r => `<div class="lr${r.ok ? '' : ' bad'}"><span>${esc(r.step)}</span><b>${fmtMs(r.ms)}</b><em>${esc(r.note || '')}</em></div>`).join('');
+  const tok = u.totalTokenCount ? `<div class="lr"><span>토큰</span><b>${u.totalTokenCount}</b><em>입력 ${u.promptTokenCount || 0}${u.videoTokens ? ' (영상 ' + u.videoTokens + ')' : ''}${u.audioTokens ? ' (소리 ' + u.audioTokens + ')' : ''} · 생각 ${u.thoughtsTokenCount || 0} · 답 ${u.candidatesTokenCount || 0}</em></div>` : '';
+  const why = (log.why || []).length ? `<div class="whys"><b>오래 걸린 이유</b>${log.why.map(w => `<div>· ${esc(w)}</div>`).join('')}</div>` : (log.total > 30000 ? '' : '<div class="whys"><div>· 특별히 늦은 곳 없음</div></div>');
+  return `<div class="logbox${open ? ' open' : ''}"><div class="lr total"><span>전체</span><b>${fmtMs(log.total)}</b><em>${log.modelVersion ? '실제 모델 ' + esc(log.modelVersion) : ''}</em></div>${rows}${tok}${why}</div>`;
+}
+setInterval(() => document.querySelectorAll('[data-since]').forEach(e => { e.textContent = since(+e.dataset.since); }), 1000);
+
+/** "여행 › 나트랑" 경로의 폴더 id (없으면 만들기) */
+function ensureFolder(path) {
+  const [a, b] = path.split(/\s*›\s*|\s*>\s*/).map(x => x.trim()).filter(Boolean);
+  if (!a) return '';
+  let top = tops().find(f => f.name === a);
+  if (!top) { top = { id: 'f' + Date.now().toString(36), name: a.slice(0, 20), parent: null }; meta.folders.push(top); }
+  if (!b) { saveMeta(); return top.id; }
+  let k = kids(top.id).find(f => f.name === b);
+  if (!k) { k = { id: 'f' + (Date.now() + 1).toString(36), name: b.slice(0, 20), parent: top.id }; meta.folders.push(k); }
+  saveMeta(); return k.id;
+}

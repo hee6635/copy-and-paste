@@ -1,0 +1,31 @@
+'use strict';
+/* 컴퓨터 브라우저에서 화면만 볼 때 쓰는 가짜 브리지 (폰에서는 쓰지 않음) */
+// ── 컴퓨터에서 화면만 볼 때 쓰는 가짜 브리지 ──
+function devBridge() {
+  const now = Date.now();
+  let data = [
+    { id: 'a', url: 'https://www.instagram.com/reel/x', platform: 'instagram', kind: '릴스', status: 'done', category: '여행',
+      ai: { places: [{ name: '콩카페', t: 3, info: '코코넛 커피 [[1일 1잔]] 추천' }, { name: '청안딤섬', t: 19, info: '딤섬 한 판 [[약 3천 원]] · [[북경오리]]' }], summary: ['잠만 잘 거면 벤타나, 야경은 아트네스트', '전체 일정은 댓글에 [[6박]] 남기면 받음'], course: ['콩카페', '포나가르 사원', '청안딤섬', '제시프루츠'], folder: '여행 › 나트랑', kind: 'recipe', recipe: { ingredients: ['감자 2개', '올리브유 1큰술'], steps: ['찬물에 10분', '200도 10분'] },
+        tips: [{ text: '6시 전에 가야 웨이팅 없음', from: 'author', who: 'yytable' }], video: true, facts: [{ t: 5, text: 'Lai Seafood 랍스터 1kg 120만동' }, { t: -1, text: '화요일 휴무: Ớt Hiểm' }], model: 'gemini-2.5-flash',
+        log: { total: 112000, rows: [{ step: '영상 올리기', ms: 8200, note: '12.3MB', ok: true }, { step: '영상 처리 대기', ms: 14000, note: '확인 7번', ok: true }, { step: '최신 flash #1', ms: 1200, note: '503 구글 서버가 바빠요(모델 혼잡) → 잠시 뒤 또는 다른 모델', ok: false }, { step: '2.5 flash #1', ms: 88000, note: '성공', ok: true }],
+          usage: { totalTokenCount: 21000, promptTokenCount: 18000, videoTokens: 15000, thoughtsTokenCount: 2400, candidatesTokenCount: 600 }, why: ['실패 1번 → 다시 시도 · 다른 모델로 넘어감', 'AI가 답하기 전에 오래 생각함 (생각 2400 · 답 600 토큰)', '영상이 길어서 볼 양이 많음 (영상 15000 토큰)'] }, transcript: [{ t: 0, text: '오늘은 나트랑 3일차' }, { t: 12, text: '콩카페 먼저 가요' }] }, title: '나트랑 시내 맛집 4곳 추천', author: 'yytable', desc: '나트랑 시내에서 현지인이 많이 가는 식당 4곳!\n1. Lai Seafood\n2. Ớt Hiểm Thai Cuisine', duration: 48, w: 720, h: 1280, memo: '12월 여행 때 저녁', tags: ['여행'], createdAt: now,
+      captures: [{ id: 'k1', t: 19, file: 'x.jpg', text: '랍스터 1kg', memo: '가격표', ai: true, at: { sec: 'places', i: 1 } }, { id: 'k2', t: 12, file: 'y.jpg', text: '', memo: '', at: { sec: 'facts', i: 0 } }, { id: 'k3', t: 20, file: 'z.jpg', text: '', memo: '' }], comments: [{ a: 'traveler_kim', t: '저녁 6시 전에 가야 웨이팅 없어요', l: 312, r: [{ a: 'yytable', t: '맞아요! 6시 넘으면 30분 넘게 기다려요', l: 20, own: true }] }, { a: 'minji', t: '저장해둡니다', l: 54 }] },
+    { id: 'b', url: 'https://youtube.com/shorts/y', platform: 'youtube', kind: '쇼츠', status: 'done', category: '디자인', title: '피그마 아이콘 파일 50개 이상 무료 배포', author: 'figma.create', desc: '댓글에 icon 남기면 보내드려요', duration: 35, w: 720, h: 1280, tags: ['디자인'], createdAt: now, comments: [], commentError: '[화면] HTTP 403 login_required\n[직접] HTTP 403', captures: [] },
+    { id: 'c', url: 'https://brunch.co.kr/z', platform: 'web', kind: '웹', status: 'done', category: '요리', title: '홈카페 라떼아트 기초', author: 'brunch.co.kr', desc: '', body: '우유 온도는 60도가 좋아요.', tags: [], createdAt: now, comments: [], captures: [] },
+    { id: 'd', url: 'https://www.instagram.com/reel/z', platform: 'instagram', status: 'saving', stage: '영상 받는 중', progress: 62, createdAt: now },
+    { id: 'e', url: 'https://www.instagram.com/reel/q', platform: 'instagram', status: 'error', error: '인스타 로그인이 필요해요', errorDetail: 'ERROR: login required', createdAt: now },
+  ];
+  return {
+    items: () => JSON.stringify(data),
+    add: (url, mode, memo) => JSON.stringify({ id: 'n' + Math.random(), url, mode, memo, platform: 'web', status: 'saving', stage: '대기 중', progress: 0, createdAt: Date.now() }),
+    update: () => '', remove: () => {}, retry: () => {}, capture: () => '', removeCapture: () => '',
+    open: () => {}, copy: () => {}, shareText: () => {}, exportFile: () => {},
+    settings: () => JSON.stringify({ quality: '720', igLogin: false, used: 1.2e9, tool: '2026.11.01', app: '0.1' }),
+    setQuality: () => {}, refetchComments: () => {}, setGeminiKey: () => {}, setAiOn: () => {}, aiRedo: () => {}, aiCancel: () => {}, batteryUnrestrict: () => {}, setAiSpeed: () => {}, setWatch: () => {}, removeMany: () => {}, updateMany: () => {}, removeCaptures: () => '',
+    meta: () => localStorage.meta || JSON.stringify({ folders: [{ id: 'f1', name: '여행', parent: null }, { id: 'f2', name: '나트랑', parent: 'f1' }, { id: 'f3', name: '디자인', parent: null }], order: [] }),
+    setMeta: (j) => { localStorage.meta = j; },
+    diag: (u) => { const st = [['링크 종류', 'ok', '인스타 · 게시물 abc'], ['인터넷 연결', 'ok', '응답 200'], ['인스타 로그인', 'ok', '로그인됨'], ['내용 읽기 (yt-dlp)', 'ok', '제목 ✓ · 설명 320자'], ['댓글 가져오기', 'fail', '[화면] HTTP 403']];
+      st.forEach((x, i) => setTimeout(() => App.onDiag(JSON.stringify({ i, name: x[0], state: x[1], msg: x[2], detail: x[1] === 'fail' ? '[화면] HTTP 403 {"message":"login_required"}' : '' })), 150 * i));
+      setTimeout(() => App.onDiag('{"end":true}'), 900); }, igLogin: () => {}, igLogout: () => {}, deleteVideos: () => {}, updateTool: () => {}, toast: () => {},
+  };
+}
