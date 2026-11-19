@@ -18,7 +18,8 @@ object Gemini {
     const val MODEL = "gemini-flash-latest"
     /** 차례로 시도: 최신 → 안정판 → 가벼운 것 */
     val CATEGORIES = listOf("여행", "맛집", "요리", "쇼핑", "디자인", "개발·IT", "공부", "운동·건강", "영화·책", "게임", "음악", "생활팁", "기타")
-    val MODELS = listOf("gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest")
+    /** 붐비는 최신 모델은 맨 뒤로: 안정판 → 가벼운 것 → 최신 */
+    val MODELS = listOf("gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-flash-latest")
 
     class HttpErr(val code: Int, msg: String) : IllegalStateException(msg)
     /** 실패해도 기록(log)은 남김 */
@@ -73,7 +74,11 @@ object Gemini {
             if (fails > 0) why += "실패 ${fails}번 → 다시 시도 · 다른 모델로 넘어감"
             val thoughts = usage?.optInt("thoughtsTokenCount") ?: 0
             val outTok = usage?.optInt("candidatesTokenCount") ?: 0
-            if (thoughts > outTok && thoughts > 500) why += "AI가 답하기 전에 오래 생각함 (생각 ${thoughts} · 답 ${outTok} 토큰)"
+            if (thoughts > 4000) why += "AI가 답하기 전에 오래 생각함 (생각 ${thoughts} 토큰)"
+            // 비교: 응답 없던 모델 vs 성공한 모델
+            var slowRow: JSONObject? = null; var okRow: JSONObject? = null
+            for (i in 0 until rows.length()) { val r = rows.getJSONObject(i); if (!r.optBoolean("ok") && r.optString("note").contains("답이 없어요") && slowRow == null) slowRow = r; if (r.optBoolean("ok") && r.has("t")) okRow = r }
+            if (slowRow != null && okRow != null) why += "${slowRow.optString("step").substringBefore(" #")}는 ${slowRow.optLong("ms") / 1000}초 동안 답이 없었고, ${okRow.optString("step").substringBefore(" #")}는 ${okRow.optLong("ms") / 1000}초 만에 답함 → 그 모델만 붐볐어요"
             val vidTok = usage?.optInt("videoTokens") ?: 0
             if (vidTok > 5000) why += "영상이 길어서 볼 양이 많음 (영상 ${vidTok} 토큰)"
             // 성공한 요청의 시간 나눔으로 "서버 쪽이냐 폰 · 인터넷 쪽이냐"를 가름
@@ -88,8 +93,16 @@ object Gemini {
                 }
             }
             val evs = PhoneState.between(t0, System.currentTimeMillis())
-            if (evs.isNotEmpty()) why += "그동안 폰: " + evs.joinToString(", ") { "${(it.at - t0) / 1000}초에 ${it.what}" }
-            if (genOk > 20000) PhoneState.throttles(ctx).forEach { why += "폰 설정: $it" }
+            if (evs.isNotEmpty() && genOk > 20000) {
+                val n = evs.groupingBy { it.what }.eachCount()
+                val bg = n["앱이 뒤로 감"] ?: 0
+                val parts = mutableListOf<String>()
+                if (bg > 0) parts += "앱 뒤/앞 전환 ${bg}번"
+                n.filterKeys { it != "앱이 뒤로 감" && it != "앱 화면 앞으로" }.forEach { (k, v) -> parts += "$k ${v}번" }
+                if (parts.isNotEmpty()) why += "그동안 폰: " + parts.joinToString(", ")
+            }
+            if (genOk > 20000 && (t == null || t.optLong("server", -1) < 0 || t.optLong("wait") - t.optLong("server") > 5000))
+                PhoneState.throttles(ctx).forEach { why += "폰 설정: $it" }
             why += extraWhy
             return JSONObject().put("total", total).put("rows", rows).put("usage", usage ?: JSONObject()).put("why", JSONArray(why))
         }
@@ -101,7 +114,7 @@ object Gemini {
         return when {
             e is HttpErr -> e.message ?: "오류 ${e.code}"
             e is java.net.UnknownHostException -> "구글 서버 주소를 못 찾아요 → 인터넷이 끊겼거나 DNS · 개인 DNS(광고 차단) 설정 문제"
-            e is java.net.SocketTimeoutException -> "응답이 너무 늦어요(시간 초과) → 서버 혼잡이거나 인터넷이 느림"
+            e is java.net.SocketTimeoutException -> "정해진 시간 안에 답이 없어요 → 이 모델이 붐비는 중 (다른 모델로 넘어감)"
             e is javax.net.ssl.SSLException || "ssl" in m || "certificate" in m -> "보안 연결 실패 → 폰 날짜·시간이 틀렸거나, 공용 와이파이 로그인 화면, VPN · 보안 앱이 가로챔"
             e is java.net.ConnectException -> "서버에 닿지 못했어요 → 인터넷 끊김, 방화벽 · 회사 와이파이 차단"
             "abort" in m || "reset" in m || "broken pipe" in m || "unexpected end" in m ->
@@ -281,7 +294,7 @@ object Gemini {
                 .put("responseSchema", schema())
                 .put("temperature", 0.3))
         onStage(if (withVideo) "받아쓰는 중" else "정리 중")
-        val (text, used) = generate(key, req, onStage, log)
+        val (text, used) = generate(key, req, onStage, log, withVideo)
         count(ctx)
         val res = JSONObject(text)
         val um = res.optJSONObject("usageMetadata")
@@ -299,20 +312,27 @@ object Gemini {
         val out = cand.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")
             ?: throw IllegalStateException("답이 비어 있어요 (${cand.optString("finishReason")})")
         return JSONObject(out.trim().removePrefix("```json").removeSuffix("```").trim())
-            .put("at", System.currentTimeMillis()).put("video", withVideo).put("model", used).put("log", log.json(usage))
+            .put("at", System.currentTimeMillis()).put("video", withVideo).put("model", used)
+            .put("modelVersion", res.optString("modelVersion")).put("log", log.json(usage).put("modelVersion", res.optString("modelVersion")))
     }
 
-    /** 모델마다 최대 3번(2초 · 5초 쉬고), 바쁘거나 끊기면 다음 모델로. 키 문제(400/401/403)는 바로 멈춤 */
-    private fun generate(key: String, req: JSONObject, onStage: (String) -> Unit, log: RunLog): Pair<String, String> {
+    /**
+     * 모델마다 최대 3번(2초 · 5초 쉬고). 응답 없음(글만 40초 · 영상 120초)이면 바로 다음 모델로.
+     * 키 문제(키 틀림 400 · 401 · 403)는 바로 멈춤. 생각 과정은 끔(2.5 모델).
+     */
+    private fun generate(key: String, req: JSONObject, onStage: (String) -> Unit, log: RunLog, withVideo: Boolean): Pair<String, String> {
         val tried = StringBuilder()
+        val limit = if (withVideo) 120000 else 40000
         for ((mi, model) in MODELS.withIndex()) {
+            val body = JSONObject(req.toString())
+            if (model.startsWith("gemini-2.5")) body.getJSONObject("generationConfig").put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
             for (attempt in 0 until 3) {
                 checkCancel()
                 onStage("${label(model)}로 정리 중" + if (attempt > 0) " (${attempt + 1}번째)" else "")
                 val t0 = System.currentTimeMillis()
                 try {
                     val (_, t) = http("POST", "$BASE/v1beta/models/$model:generateContent", key,
-                        req.toString().toByteArray(), mapOf("Content-Type" to "application/json"), 300000)
+                        body.toString().toByteArray(), mapOf("Content-Type" to "application/json"), limit)
                     val tm = last
                     log.okTiming = tm
                     log.add("${label(model)} #${attempt + 1}", System.currentTimeMillis() - t0, "성공 · " + timingText(tm), true, tm)
@@ -323,14 +343,17 @@ object Gemini {
                     val short = why.substringBefore(" →")
                     log.add("${label(model)} #${attempt + 1}", System.currentTimeMillis() - t0, why + " · " + timingText(last), false, last)
                     tried.append("${label(model)} #${attempt + 1}: $why\n")
-                    if (e is HttpErr && e.code in listOf(400, 401, 403)) throw IllegalStateException(tried.toString().trim())
-                    val skipModel = e is HttpErr && (e.code == 404 || e.code == 429)
+                    val keyBad = e is HttpErr && (e.code == 401 || e.code == 403 || (e.code == 400 && (e.message ?: "").contains("키가 맞지")))
+                    if (keyBad) throw IllegalStateException(tried.toString().trim())
+                    val timeout = e is java.net.SocketTimeoutException
+                    val skipModel = timeout || (e is HttpErr && (e.code == 400 || e.code == 404 || e.code == 429))
+                    val shortMsg = if (timeout) "${limit / 1000}초 응답 없음" else short
                     val next = MODELS.getOrNull(mi + 1)
                     if (attempt < 2 && !skipModel) {
-                        onStage("${label(model)} 안 됨 ($short) → 같은 모델로 다시 시도")
+                        onStage("${label(model)} 안 됨 ($shortMsg) → 같은 모델로 다시 시도")
                         Thread.sleep(if (attempt == 0) 2000 else 5000)
                     } else {
-                        if (next != null) onStage("${label(model)} 안 됨 ($short) → ${label(next)}로 바꿔서 시도")
+                        if (next != null) onStage("${label(model)} 안 됨 ($shortMsg) → ${label(next)}로 바꿔서 시도")
                         break
                     }
                 }

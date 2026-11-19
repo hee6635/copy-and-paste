@@ -470,7 +470,7 @@
     const rows = (log.rows || []).map(r => `<div class="lr${r.ok ? '' : ' bad'}"><span>${esc(r.step)}</span><b>${fmtMs(r.ms)}</b><em>${esc(r.note || '')}</em></div>`).join('');
     const tok = u.totalTokenCount ? `<div class="lr"><span>토큰</span><b>${u.totalTokenCount}</b><em>입력 ${u.promptTokenCount || 0}${u.videoTokens ? ' (영상 ' + u.videoTokens + ')' : ''}${u.audioTokens ? ' (소리 ' + u.audioTokens + ')' : ''} · 생각 ${u.thoughtsTokenCount || 0} · 답 ${u.candidatesTokenCount || 0}</em></div>` : '';
     const why = (log.why || []).length ? `<div class="whys"><b>오래 걸린 이유</b>${log.why.map(w => `<div>· ${esc(w)}</div>`).join('')}</div>` : (log.total > 30000 ? '' : '<div class="whys"><div>· 특별히 늦은 곳 없음</div></div>');
-    return `<div class="logbox${open ? ' open' : ''}"><div class="lr total"><span>전체</span><b>${fmtMs(log.total)}</b><em></em></div>${rows}${tok}${why}</div>`;
+    return `<div class="logbox${open ? ' open' : ''}"><div class="lr total"><span>전체</span><b>${fmtMs(log.total)}</b><em>${log.modelVersion ? '실제 모델 ' + esc(log.modelVersion) : ''}</em></div>${rows}${tok}${why}</div>`;
   }
   setInterval(() => document.querySelectorAll('[data-since]').forEach(e => { e.textContent = since(+e.dataset.since); }), 1000);
 
