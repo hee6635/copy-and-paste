@@ -191,9 +191,28 @@ class SaveService : Service() {
         emit(Store.patch(this, id) { it.put("aiBusy", "AI 정리 준비 중"); it.put("aiBusyAt", System.currentTimeMillis()); it.remove("aiError"); it.remove("aiLog") })
         updateNotif("AI 정리 중")
         try {
-            val ai = Gemini.organize(this, item, folderPaths()) { st ->
-                emit(Store.patch(this, id) { it.put("aiBusy", "AI $st") })
+            // 링크만 저장한 것도 영상 보기: 유튜브는 링크 그대로, 인스타는 잠깐 받아서
+            var temp: File? = null; var yt: String? = null
+            val pre = mutableListOf<Triple<String, Long, String>>()
+            val url = item.optString("url")
+            if (item.optString("video").isEmpty() && Gemini.watch(this)) when (platformOf(url)) {
+                "youtube" -> yt = Gemini.ytWatchUrl(url)
+                "instagram" -> {
+                    emit(Store.patch(this, id) { it.put("aiBusy", "AI 영상 잠깐 받는 중") })
+                    val t0 = System.currentTimeMillis()
+                    try {
+                        temp = tempVideo(id, url)
+                        pre += Triple("영상 잠깐 받기", System.currentTimeMillis() - t0, String.format(java.util.Locale.US, "%.1fMB (정리 뒤 지움)", (temp?.length() ?: 0) / 1e6))
+                    } catch (e: Throwable) {
+                        pre += Triple("영상 잠깐 받기", System.currentTimeMillis() - t0, "실패 → 글만 보고 정리: " + friendly(e.message ?: e.toString()))
+                    }
+                }
             }
+            val ai = try {
+                Gemini.organize(this, item, folderPaths(), { st ->
+                    emit(Store.patch(this, id) { it.put("aiBusy", "AI $st") })
+                }, temp, yt, pre)
+            } finally { temp?.delete() }
             emit(Store.patch(this, id) { o ->
                 o.put("ai", ai)
                 ai.optString("category").takeIf { it.isNotEmpty() }?.let { o.put("category", it) }
@@ -218,6 +237,22 @@ class SaveService : Service() {
                 if (e is Gemini.AiFail) it.put("aiLog", e.log)
             })
         }
+    }
+
+    /** AI 가 볼 영상을 작게(480p 이하) 잠깐 받기 */
+    private fun tempVideo(id: String, url: String): File {
+        Tools.init(this)
+        val dir = File(cacheDir, "aiv").also { it.mkdirs() }
+        dir.listFiles()?.filter { it.name.startsWith(id) }?.forEach { it.delete() }
+        val req = YoutubeDLRequest(url)
+        req.addOption("--no-playlist")
+        req.addOption("-f", "b[height<=480][ext=mp4]/bv*[height<=480]+ba/b[height<=480]/b")
+        req.addOption("--merge-output-format", "mp4")
+        req.addOption("-o", File(dir, "$id.%(ext)s").absolutePath)
+        if (platformOf(url) == "instagram") Ig.cookieFile(this)?.let { req.addOption("--cookies", it.absolutePath) }
+        YoutubeDL.getInstance().execute(req, "aiv-$id", false, null)
+        return dir.listFiles()?.firstOrNull { it.name.startsWith("$id.") && it.extension in setOf("mp4", "webm", "mkv", "mov") }
+            ?: throw IllegalStateException("영상 파일이 안 생겼어요")
     }
 
     /** 인스타 댓글을 받아 메모에 넣기. 실패하면 이유를 commentError 에 남김 */

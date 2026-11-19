@@ -285,6 +285,7 @@ class MainActivity : ComponentActivity() {
                 .put("keyTail", Gemini.key(ctx).takeLast(4))
                 .put("aiUsed", Gemini.usedThisMonth(ctx))
                 .put("aiSpeed", Gemini.speed(ctx))
+                .put("watch", Gemini.watch(ctx))
                 .put("batteryOpt", !getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(packageName))
                 .toString()
         }
@@ -295,6 +296,7 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun aiRedo(id: String) = SaveService.start(ctx, id, "ai")
         @JavascriptInterface fun aiCancel() = Gemini.cancel()
         @JavascriptInterface fun setAiSpeed(v: String) = Gemini.setSpeed(ctx, v)
+        @JavascriptInterface fun setWatch(v: Boolean) = Gemini.setWatch(ctx, v)
         /** 배터리 최적화 해제 요청 (뒤에서도 통신이 늦어지지 않게) */
         @JavascriptInterface fun batteryUnrestrict() {
             try {

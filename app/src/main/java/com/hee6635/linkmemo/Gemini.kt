@@ -249,6 +249,7 @@ object Gemini {
 - tips: 댓글과 작성자 답글에서 실제로 쓸모 있는 정보만 0~5개 (추천 · 주의 · 가격 · 시간 · 위치 등). 인사 · 태그 · 감탄은 빼기. from 은 작성자 답글이면 author, 아니면 comment. who 는 아이디.
 - star: 정보가 있는 댓글의 번호(0부터) 목록.
 """)
+        sb.append("- facts: 영상 · 글에서 나온 구체 정보만 0~8개 (가게 · 장소 이름, 가격, 시간, 수치, 방법). 영상에서 나온 것이면 t 에 그 시각(초), 아니면 -1.\n")
         if (withVideo) sb.append("- transcript: 영상에서 말하는 내용을 시간(초)과 함께 받아쓰기. 화면에 크게 나오는 글자도 [화면] 으로 넣기. 말이 없으면 빈 목록.\n")
         else sb.append("- transcript: 빈 목록.\n")
         sb.append("\n내 폴더: ").append(if (folders.isEmpty()) "(없음)" else folders.joinToString(" / ")).append("\n\n")
@@ -290,29 +291,55 @@ object Gemini {
             "tips" to arr(obj("text" to str(), "from" to str(), "who" to str(), req = listOf("text"))),
             "star" to arr(JSONObject().put("type", "INTEGER")),
             "transcript" to arr(obj("t" to JSONObject().put("type", "NUMBER"), "text" to str(), req = listOf("t", "text"))),
+            "facts" to arr(obj("t" to JSONObject().put("type", "NUMBER"), "text" to str(), req = listOf("t", "text"))),
             req = listOf("summary", "tags", "folder", "kind", "category", "tips", "star", "transcript")
         )
     }
 
     /** 메모 하나 정리. 결과 JSON(ai) 을 돌려준다 */
-    fun organize(ctx: Context, item: JSONObject, folders: List<String>, onStage: (String) -> Unit): JSONObject {
+    /** 링크만 저장한 것도 영상을 보게 할지 (기본 켬) */
+    fun watch(ctx: Context) = sp(ctx).getBoolean("watch", true)
+    fun setWatch(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("watch", v).apply()
+
+    /** 유튜브 링크 → Gemini 가 바로 보는 형식 (watch?v=) */
+    fun ytWatchUrl(url: String): String? {
+        val id = Regex("(?:youtu\\.be/|/shorts/|/live/|[?&]v=)([A-Za-z0-9_-]{11})").find(url)?.groupValues?.get(1) ?: return null
+        return "https://www.youtube.com/watch?v=$id"
+    }
+
+    /**
+     * tempVideo: 링크만 저장한 인스타 영상을 잠깐 받은 파일 · ytUrl: 유튜브 링크(받지 않고 그대로 넘김)
+     * pre: 정리 전에 한 일(영상 잠깐 받기 등) 기록
+     */
+    fun organize(ctx: Context, item: JSONObject, folders: List<String>, onStage: (String) -> Unit,
+                 tempVideo: File? = null, ytUrl: String? = null, pre: List<Triple<String, Long, String>> = emptyList()): JSONObject {
         val key = key(ctx)
         if (key.isEmpty()) throw IllegalStateException("Gemini API 키가 없어요 (설정에서 넣어 주세요)")
         cancelled = false
         val log = RunLog(ctx)
-        return try { organizeImpl(ctx, key, item, folders, onStage, log) }
+        pre.forEach { (step, ms, note) -> log.add(step, ms, note, !note.startsWith("실패")) }
+        return try { organizeImpl(ctx, key, item, folders, onStage, log, tempVideo, ytUrl) }
         catch (e: Throwable) { throw AiFail(if (cancelled) "중지했어요" else explain(e), log.json(null)) }
     }
 
-    private fun organizeImpl(ctx: Context, key: String, item: JSONObject, folders: List<String>, onStage: (String) -> Unit, log: RunLog): JSONObject {
+    private fun organizeImpl(ctx: Context, key: String, item: JSONObject, folders: List<String>, onStage: (String) -> Unit, log: RunLog,
+                             tempVideo: File?, ytUrl: String?): JSONObject {
         val parts = JSONArray()
         val vName = item.optString("video")
-        val vFile = if (vName.isNotEmpty()) File(Store.dir(ctx, item.optString("id")), vName) else null
-        val withVideo = vFile != null && vFile.exists() && vFile.length() < 1_900_000_000L
-        if (withVideo) {
+        val saved = if (vName.isNotEmpty()) File(Store.dir(ctx, item.optString("id")), vName) else null
+        val vFile = (saved?.takeIf { it.exists() } ?: tempVideo?.takeIf { it.exists() })?.takeIf { it.length() < 1_900_000_000L }
+        var withVideo = false
+        if (vFile != null) {
             onStage("영상 올리는 중")
-            val uri = upload(ctx, key, vFile!!, if (vName.endsWith(".webm")) "video/webm" else "video/mp4", log)
-            parts.put(JSONObject().put("file_data", JSONObject().put("mime_type", if (vName.endsWith(".webm")) "video/webm" else "video/mp4").put("file_uri", uri)))
+            val mime = if (vFile.name.endsWith(".webm")) "video/webm" else "video/mp4"
+            val uri = upload(ctx, key, vFile, mime, log)
+            parts.put(JSONObject().put("file_data", JSONObject().put("mime_type", mime).put("file_uri", uri)))
+            withVideo = true
+        } else if (ytUrl != null) {
+            // 유튜브는 받지 않고 링크를 그대로 넘김 (공개 영상만)
+            parts.put(JSONObject().put("file_data", JSONObject().put("file_uri", ytUrl)))
+            log.add("유튜브 링크로 보기", 0, ytUrl, true)
+            withVideo = true
         }
         parts.put(JSONObject().put("text", prompt(item, folders, withVideo)))
         val req = JSONObject()
@@ -320,7 +347,8 @@ object Gemini {
             .put("generationConfig", JSONObject()
                 .put("responseMimeType", "application/json")
                 .put("responseSchema", schema())
-                .put("temperature", 0.3))
+                .put("temperature", 0.3)
+                .also { if (withVideo) it.put("mediaResolution", "MEDIA_RESOLUTION_LOW") })
         onStage(if (withVideo) "받아쓰는 중" else "정리 중")
         val (text, used) = generate(ctx, key, req, onStage, log, withVideo)
         count(ctx)
