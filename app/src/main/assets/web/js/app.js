@@ -51,7 +51,10 @@
     if (!inFilter(it)) return false;
     if (!query) return true;
     const q = query.toLowerCase();
-    const hay = [it.title, it.author, it.desc, it.body, it.memo, it.url, fPath(it.folder), (it.tags || []).join(' '),
+    const ai = it.ai || {};
+    const hay = [it.title, it.author, it.desc, it.body, it.memo, it.url, fPath(it.folder),
+      (ai.summary || []).join(' '), (ai.tips || []).map(x => x.text).join(' '), (ai.transcript || []).map(x => x.text).join(' '),
+      ai.recipe ? (ai.recipe.ingredients || []).concat(ai.recipe.steps || []).join(' ') : '', (ai.checklist || []).join(' '), (it.tags || []).join(' '),
       (it.comments || []).map(c => c.a + ' ' + c.t + ' ' + (c.r || []).map(r => r.t).join(' ')).join(' '),
       (it.captures || []).map(c => c.text + ' ' + c.memo).join(' ')].join(' ').toLowerCase();
     return q.split(/\s+/).every(w => hay.includes(w));
@@ -98,7 +101,7 @@
     const memo = it.memo ? `<div class="cm1">${esc(it.memo)}</div>` : '';
     const folder = it.folder && fById(it.folder) && !fSub ? `<span class="tag">${esc(fById(it.folder).name)}</span>` : '';
     return `<button class="card${sel.has(it.id) ? ' picked' : ''}" data-id="${esc(it.id)}"><span class="ck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 12.5l4 4 8-9"/></svg></span>${thumb}<div class="cb"><div class="ct">${esc(it.title || it.url)}</div>
-      <div class="cs">${esc(PLAT[it.platform] || '')}${it.author ? ' · ' + esc(it.author) : ''}</div>${memo}${folder}</div></button>`;
+      <div class="cs">${esc(PLAT[it.platform] || '')}${it.author ? ' · ' + esc(it.author) : ''}</div>${memo}${folder}${it.aiBusy ? '<span class="tag busy">AI 정리 중</span>' : ''}</div></button>`;
   }
 
   function visible() { return sorted(items.filter(it => it.status === 'done' && matches(it))); }
@@ -378,7 +381,7 @@
       } else if (it.thumb) {
         media = `<div class="video"><img src="${fileUrl(it.id, it.thumb)}" alt=""></div>`;
       }
-      sc.innerHTML = media + `<div class="meta"></div><div id="dCaps"></div><div id="dTabs"></div><div id="dBody"></div>
+      sc.innerHTML = media + `<div class="meta"></div><div id="dAi"></div><div id="dCaps"></div><div id="dTabs"></div><div id="dBody"></div>
         <div class="sec"><label class="memo"><small>내 메모</small><textarea id="dMemo" rows="2"></textarea></label></div>`;
       $('#dMemo').value = it.memo || '';
       autoGrow($('#dMemo'));
@@ -388,9 +391,52 @@
       <button class="fchip" id="dFolder"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>${esc(fPath(it.folder) || '폴더 없음')}<svg class="ic chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
       <div class="tags">${(it.tags || []).map(t => `<button class="tg" data-tag="${esc(t)}">#${esc(t)}</button>`).join('')}
       <button class="add" id="dAddTag" aria-label="태그 추가"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>`;
+    renderAi(it);
     renderCaps(it);
     renderTabs(it);
     $('#aSave').disabled = !it.video;
+  }
+
+  // ── AI 정리 결과 ──
+  function renderAi(it) {
+    const el = $('#dAi'); if (!el) return;
+    const ai = it.ai;
+    if (it.aiBusy) { el.innerHTML = `<div class="sec"><div class="sh"><b>${esc(it.aiBusy)}…</b><span class="ai">AI</span></div><div class="aibar"><i></i></div></div>`; return; }
+    if (!ai) {
+      el.innerHTML = it.aiError ? `<div class="sec"><div class="cmtx"><b>AI 정리를 못 했어요</b><div class="why">${esc(String(it.aiError).split('\n')[0])}</div>
+        <div class="bt"><button class="chip dark" data-airedo>다시 정리</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div></div>` : '';
+      return;
+    }
+    let h = '';
+    const sum = ai.summary || [];
+    const sugg = ai.folder && ai.folder.trim() && fPath(it.folder) !== ai.folder.trim() ? ai.folder.trim() : '';
+    if (sum.length || sugg) h += `<div class="sec"><div class="sh"><b>요약</b><button class="ai" data-airedo aria-label="다시 정리">AI ↻</button></div>
+      ${sum.length ? `<ul class="sum">${sum.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      ${sugg ? `<div class="sugg"><div class="t">폴더 추천 <b>${esc(sugg)}</b></div><button data-sugg>옮기기</button></div>` : ''}</div>`;
+    const tips = ai.tips || [];
+    if (tips.length) h += `<div class="sec"><div class="sh"><b>댓글 꿀팁</b><span class="ai">AI</span></div>
+      ${tips.map((t, i) => `<div class="tip"><span class="n">${i + 1}</span><div><p>${esc(t.text)}</p><small>${t.from === 'author' ? '작성자 답글' : t.who ? '@' + esc(String(t.who).replace(/^@/, '')) : '댓글'}</small></div></div>`).join('')}</div>`;
+    const ck = it.checks || {};
+    const rec = ai.kind === 'recipe' && ai.recipe ? ai.recipe : null;
+    if (rec && (rec.ingredients || []).length) h += `<div class="sec"><div class="sh"><b>재료</b><span class="ai">AI</span></div>
+      ${rec.ingredients.map((x, i) => `<button class="chk${(ck.i || []).includes(i) ? ' on' : ''}" data-chk="i:${i}"><i></i><span>${esc(x)}</span></button>`).join('')}</div>`;
+    if (rec && (rec.steps || []).length) h += `<div class="sec"><div class="sh"><b>순서</b></div>${rec.steps.map((x, i) => `<div class="stepn"><b>${i + 1}</b><span>${esc(x)}</span></div>`).join('')}</div>`;
+    if (ai.kind === 'checklist' && (ai.checklist || []).length) h += `<div class="sec"><div class="sh"><b>체크리스트</b><span class="ai">AI</span></div>
+      ${ai.checklist.map((x, i) => `<button class="chk${(ck.c || []).includes(i) ? ' on' : ''}" data-chk="c:${i}"><i></i><span>${esc(x)}</span></button>`).join('')}</div>`;
+    if (it.aiError) h += `<div class="sec"><div class="cmtx"><div class="why">다시 정리 실패: ${esc(String(it.aiError).split('\n')[0])}</div></div></div>`;
+    el.innerHTML = h;
+  }
+
+  /** "여행 › 나트랑" 경로의 폴더 id (없으면 만들기) */
+  function ensureFolder(path) {
+    const [a, b] = path.split(/\s*›\s*|\s*>\s*/).map(x => x.trim()).filter(Boolean);
+    if (!a) return '';
+    let top = tops().find(f => f.name === a);
+    if (!top) { top = { id: 'f' + Date.now().toString(36), name: a.slice(0, 20), parent: null }; meta.folders.push(top); }
+    if (!b) { saveMeta(); return top.id; }
+    let k = kids(top.id).find(f => f.name === b);
+    if (!k) { k = { id: 'f' + (Date.now() + 1).toString(36), name: b.slice(0, 20), parent: top.id }; meta.folders.push(k); }
+    saveMeta(); return k.id;
   }
 
   function renderCaps(it) {
@@ -406,7 +452,7 @@
   function renderTabs(it) {
     const tabs = it.platform === 'web'
       ? [['body', '본문']]
-      : [['desc', '설명'], ['cmt', '댓글 ' + (it.comments || []).length]];
+      : [['desc', '설명']].concat((it.ai && (it.ai.transcript || []).length) ? [['ts', '받아쓰기']] : [], [['cmt', '댓글 ' + (it.comments || []).length]]);
     if (!tabs.some(t => t[0] === curTab)) curTab = tabs[0][0];
     const idx = tabs.findIndex(t => t[0] === curTab);
     $('#dTabs').innerHTML = tabs.length < 2 ? '' : `<div class="tabs"><i style="width:calc((100% - 6px) / ${tabs.length});transform:translateX(${idx * 100}%)"></i>
@@ -414,6 +460,8 @@
     let body = '';
     if (curTab === 'desc') {
       body = it.desc ? longText(it.desc) : '<div class="none">설명이 없어요</div>';
+    } else if (curTab === 'ts') {
+      body = it.ai.transcript.map(x => `<button class="ts" data-seek="${+x.t || 0}"><b>${fmtT(x.t)}</b><span>${esc(x.text)}</span></button>`).join('');
     } else if (curTab === 'body') {
       body = (it.desc ? `<p class="p" style="color:var(--sub);margin-bottom:12px">${esc(it.desc)}</p>` : '') + (it.body ? longText(it.body) : '<div class="none">본문을 읽지 못했어요</div>');
     } else {
@@ -422,7 +470,8 @@
       const tools = it.commentBusy ? '<div class="none">댓글 가져오는 중…</div>'
         : !cs.length && it.commentError ? `<div class="cmtx"><b>댓글을 못 가져왔어요</b><div class="why">${esc(String(it.commentError).split('\n')[0])}</div><div class="bt"><button class="chip dark" data-refetch>다시 가져오기</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>`
         : !cs.length ? `<div class="cmtx"><div class="none">댓글이 없어요</div>${ref ? '<button class="chip" data-refetch>다시 가져오기</button>' : ''}</div>` : '';
-      body = tools || cs.map((c, i) => `<div class="cmt${c.star ? ' star' : ''}"><div class="h"><b>${c.star ? '★ ' : ''}@${esc(c.a)}</b><span>♡ ${c.l || 0}</span></div><p>${esc(c.t)}</p>
+      const ordered = cs.filter(c => c.star).concat(cs.filter(c => !c.star));
+      body = tools || ordered.map((c, i) => `<div class="cmt${c.star ? ' star' : ''}"><div class="h"><b>${c.star ? '★ ' : ''}@${esc(c.a)}</b><span>♡ ${c.l || 0}</span></div><p>${esc(c.t)}</p>
         ${(c.r || []).map(r => `<div class="rep"><div class="h"><b>@${esc(r.a)}${r.own ? '<span class="own">작성자</span>' : ''}</b><span>♡ ${r.l || 0}</span></div><p>${esc(r.t)}</p></div>`).join('')}</div>`).join('') + (ref ? '<button class="refetch" data-refetch>댓글 다시 가져오기</button>' : '');
     }
     $('#dBody').innerHTML = `<div class="sec">${body}</div>`;
@@ -462,6 +511,10 @@
     L.push('🔗 ' + it.url);
     if ((it.tags || []).length) L.push(it.tags.map(t => '#' + t).join(' '));
     if (it.memo) L.push('', '── 내 메모 ──', it.memo);
+    if (it.ai && (it.ai.summary || []).length) L.push('', '── 요약 ──', ...it.ai.summary.map(x => '· ' + x));
+    if (it.ai && (it.ai.tips || []).length) L.push('', '── 댓글 꿀팁 ──', ...it.ai.tips.map((x, i) => (i + 1) + '. ' + x.text));
+    if (it.ai && it.ai.recipe && (it.ai.recipe.ingredients || []).length) L.push('', '── 재료 ──', ...it.ai.recipe.ingredients.map(x => '· ' + x), '', '── 순서 ──', ...(it.ai.recipe.steps || []).map((x, i) => (i + 1) + '. ' + x));
+    if (it.ai && (it.ai.checklist || []).length) L.push('', '── 체크리스트 ──', ...it.ai.checklist.map(x => '□ ' + x));
     if (it.desc) L.push('', '── 설명 ──', it.desc);
     if (it.body) L.push('', '── 본문 ──', it.body);
     const caps = (it.captures || []).filter(c => c.text || c.memo);
@@ -503,7 +556,14 @@
     let s = {}; try { s = JSON.parse(A.settings()); } catch (e) {}
     const qs = [['480', '480p'], ['720', '720p'], ['1080', '1080p'], ['best', '최고']];
     const qi = Math.max(0, qs.findIndex(q => q[0] === s.quality));
+    const aiN = items.filter(x => x.status === 'done' && !x.ai).length;
     $('#sScroll').innerHTML = `
+      <div class="group">
+        <button class="row" id="sAiOn" ${s.hasKey ? '' : 'disabled'}><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/></svg></span><span class="rt">AI 정리</span><span class="sw${s.aiOn ? ' on' : ''}"></span></button>
+        <label class="field keyf"><input id="sKey" type="password" placeholder=" " autocomplete="off"><span>${s.hasKey ? 'Gemini API 키 (••••' + esc(s.keyTail) + ')' : 'Gemini API 키 붙여넣기'}</span></label>
+        <div class="row"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span><span class="rt">이번 달 사용</span><span class="rv">${s.aiUsed || 0}회</span></div>
+        <button class="row" id="sAiAll"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></span><span class="rt">저장한 것 AI 정리</span><span class="rv">${aiN}개</span></button>
+      </div>
       <div class="group">
         <button class="row" id="sIg"><span class="icb">${platIcon('instagram')}</span><span class="rt">인스타 로그인</span><span class="rv">${s.igLogin ? '로그인됨' : '안 됨'}</span></button>
       </div>
@@ -520,6 +580,7 @@
         <button class="row" id="sDiag"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M9 11l2 2 4-4"/><rect x="4" y="4" width="16" height="16" rx="4"/></svg></span><span class="rt">검사</span></button>
         <div class="row"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></svg></span><span class="rt">앱 버전</span><span class="rv">${esc(s.app || '')}</span></div>
       </div>`;
+    $('#sKey').onchange = e => { const v = e.target.value.trim(); if (!v) return; A.setGeminiKey(v); A.setAiOn(true); e.target.value = ''; toast('키를 저장했어요'); renderSettings(); };
     $('#sIg').onclick = () => {
       if (s.igLogin) confirmAsk('인스타에서 로그아웃할까요?', '로그아웃', () => A.igLogout());
       else A.igLogin();
@@ -631,6 +692,21 @@
     });
     if (t.closest('#ordDone')) { saveOrder(); closePage('order'); if (selecting) endSelect(); toast('순서를 바꿨어요'); return; }
     if (t.closest('#dFolder')) return openMove([cur]);
+    if (t.closest('[data-sugg]')) { const it = byId(cur); const fid = ensureFolder(it.ai.folder); if (fid) { moveIds = [cur]; moveTo(fid); renderChips(); } return; }
+    if (t.closest('[data-airedo]')) { const it = byId(cur); it.aiBusy = 'AI 정리 중'; it.aiError = ''; renderAi(it); A.aiRedo(cur); return; }
+    const chk = t.closest('[data-chk]'); if (chk) {
+      const it = byId(cur); const [k, i] = chk.dataset.chk.split(':'); const n = +i;
+      it.checks = it.checks || {}; const a = it.checks[k] = it.checks[k] || [];
+      const j = a.indexOf(n); if (j >= 0) a.splice(j, 1); else a.push(n);
+      chk.classList.toggle('on', a.includes(n)); A.update(cur, JSON.stringify({ checks: it.checks })); return;
+    }
+    const sk = t.closest('[data-seek]'); if (sk) { const v = $('#dVideo'); if (v) { v.currentTime = +sk.dataset.seek; v.play(); $('#dScroll').scrollTo({ top: 0, behavior: 'smooth' }); } else toast('영상을 저장하지 않은 메모예요'); return; }
+    if (t.closest('#sAiOn')) { const on = !t.closest('#sAiOn').classList.contains('on'); A.setAiOn(on); renderSettings(); return; }
+    if (t.closest('#sAiAll')) {
+      const todo = items.filter(x => x.status === 'done' && !x.ai);
+      if (!todo.length) { toast('정리할 메모가 없어요'); return; }
+      return confirmAsk(todo.length + '개를 AI로 정리할까요?', '정리하기', () => { todo.forEach(x => { x.aiBusy = 'AI 대기 중'; A.aiRedo(x.id); }); toast('하나씩 정리할게요'); renderHome(); });
+    }
     const dg = t.closest('[data-diag]'); if (dg) { const it = byId(dg.dataset.diag); return openDiag(it ? it.url : '', it, true); }
     if (t.closest('[data-refetch]')) { const it = byId(cur); if (it) { it.commentBusy = true; renderTabs(it); A.refetchComments(cur); } return; }
     const ec = t.closest('[data-errcopy]'); if (ec) { const it = byId(ec.dataset.errcopy); A.copy((it.url || '') + '\n' + (it.errorDetail || it.error || '')); toast('오류 내용을 복사했어요'); return; }
@@ -698,6 +774,9 @@
     const it = byId(cur); if (!it) return;
     const done = (txt, what) => { A.copy(txt); toast(what + ' 복사했어요'); };
     const rows = [['전체', () => done(itemText(it), '전체를')]];
+    if (it.ai && (it.ai.summary || []).length) rows.push(['요약', () => done(it.ai.summary.join('\n'), '요약을')]);
+    if (it.ai && (it.ai.tips || []).length) rows.push(['댓글 꿀팁', () => done(it.ai.tips.map((x, i) => (i + 1) + '. ' + x.text).join('\n'), '꿀팁을')]);
+    if (it.ai && (it.ai.transcript || []).length) rows.push(['받아쓰기', () => done(it.ai.transcript.map(x => '[' + fmtT(x.t) + '] ' + x.text).join('\n'), '받아쓰기를')]);
     if (it.desc) rows.push(['설명', () => done(it.desc, '설명을')]);
     if (it.body) rows.push(['본문', () => done(it.body, '본문을')]);
     if ((it.comments || []).length) rows.push(['댓글', () => done(it.comments.map((c, i) => (i + 1) + '. @' + c.a + ' ' + c.t + (c.r || []).map(r => '\n   ↳ @' + r.a + (r.own ? ' [작성자]' : '') + ' ' + r.t).join('')).join('\n'), '댓글을')]);
@@ -727,7 +806,9 @@
   function devBridge() {
     const now = Date.now();
     let data = [
-      { id: 'a', url: 'https://www.instagram.com/reel/x', platform: 'instagram', kind: '릴스', status: 'done', title: '나트랑 시내 맛집 4곳 추천', author: 'yytable', desc: '나트랑 시내에서 현지인이 많이 가는 식당 4곳!\n1. Lai Seafood\n2. Ớt Hiểm Thai Cuisine', duration: 48, w: 720, h: 1280, memo: '12월 여행 때 저녁', tags: ['여행'], createdAt: now,
+      { id: 'a', url: 'https://www.instagram.com/reel/x', platform: 'instagram', kind: '릴스', status: 'done',
+        ai: { summary: ['체크아웃 후 콩카페 → 반쎄오 → 야시장 코스', '중간에 다른 메뉴 섞기 추천'], folder: '여행 › 나트랑', kind: 'recipe', recipe: { ingredients: ['감자 2개', '올리브유 1큰술'], steps: ['찬물에 10분', '200도 10분'] },
+          tips: [{ text: '6시 전에 가야 웨이팅 없음', from: 'author', who: 'yytable' }], transcript: [{ t: 0, text: '오늘은 나트랑 3일차' }, { t: 12, text: '콩카페 먼저 가요' }] }, title: '나트랑 시내 맛집 4곳 추천', author: 'yytable', desc: '나트랑 시내에서 현지인이 많이 가는 식당 4곳!\n1. Lai Seafood\n2. Ớt Hiểm Thai Cuisine', duration: 48, w: 720, h: 1280, memo: '12월 여행 때 저녁', tags: ['여행'], createdAt: now,
         comments: [{ a: 'traveler_kim', t: '저녁 6시 전에 가야 웨이팅 없어요', l: 312, r: [{ a: 'yytable', t: '맞아요! 6시 넘으면 30분 넘게 기다려요', l: 20, own: true }] }, { a: 'minji', t: '저장해둡니다', l: 54 }], captures: [] },
       { id: 'b', url: 'https://youtube.com/shorts/y', platform: 'youtube', kind: '쇼츠', status: 'done', title: '피그마 아이콘 파일 50개 이상 무료 배포', author: 'figma.create', desc: '댓글에 icon 남기면 보내드려요', duration: 35, w: 720, h: 1280, tags: ['디자인'], createdAt: now, comments: [], commentError: '[화면] HTTP 403 login_required\n[직접] HTTP 403', captures: [] },
       { id: 'c', url: 'https://brunch.co.kr/z', platform: 'web', kind: '웹', status: 'done', title: '홈카페 라떼아트 기초', author: 'brunch.co.kr', desc: '', body: '우유 온도는 60도가 좋아요.', tags: [], createdAt: now, comments: [], captures: [] },
@@ -740,7 +821,7 @@
       update: () => '', remove: () => {}, retry: () => {}, capture: () => '', removeCapture: () => '',
       open: () => {}, copy: () => {}, shareText: () => {}, exportFile: () => {},
       settings: () => JSON.stringify({ quality: '720', igLogin: false, used: 1.2e9, tool: '2026.11.01', app: '0.1' }),
-      setQuality: () => {}, refetchComments: () => {}, removeMany: () => {}, updateMany: () => {},
+      setQuality: () => {}, refetchComments: () => {}, setGeminiKey: () => {}, setAiOn: () => {}, aiRedo: () => {}, removeMany: () => {}, updateMany: () => {},
       meta: () => localStorage.meta || JSON.stringify({ folders: [{ id: 'f1', name: '여행', parent: null }, { id: 'f2', name: '나트랑', parent: 'f1' }, { id: 'f3', name: '디자인', parent: null }], order: [] }),
       setMeta: (j) => { localStorage.meta = j; },
       diag: (u) => { const st = [['링크 종류', 'ok', '인스타 · 게시물 abc'], ['인터넷 연결', 'ok', '응답 200'], ['인스타 로그인', 'ok', '로그인됨'], ['내용 읽기 (yt-dlp)', 'ok', '제목 ✓ · 설명 320자'], ['댓글 가져오기', 'fail', '[화면] HTTP 403']];

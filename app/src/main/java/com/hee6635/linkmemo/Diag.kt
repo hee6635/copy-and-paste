@@ -162,6 +162,10 @@ object Diag {
             if (text.isEmpty()) throw IllegalStateException("글자 읽기 모델이 아직 준비 안 됨 (구글 Play 서비스가 받는 중일 수 있어요)")
         }
 
+        if (Gemini.key(ctx).isNotEmpty()) step("Gemini (AI 정리)") { s ->
+            s.msg = "응답: " + Gemini.ping(ctx) + " · 이번 달 ${Gemini.usedThisMonth(ctx)}회"
+        } else skip("Gemini (AI 정리)", "API 키가 없어요")
+
         step("저장 공간") { s ->
             val free = ctx.filesDir.usableSpace
             s.msg = "남은 공간 ${free / 1_000_000}MB · 앱 사용 ${Store.usedBytes(ctx) / 1_000_000}MB"

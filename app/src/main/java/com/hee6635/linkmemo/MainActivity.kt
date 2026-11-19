@@ -277,10 +277,17 @@ class MainActivity : ComponentActivity() {
                 .put("used", Store.usedBytes(ctx))
                 .put("tool", try { YoutubeDL.getInstance().versionName(ctx) ?: "" } catch (_: Throwable) { "" })
                 .put("app", packageManager.getPackageInfo(packageName, 0).versionName)
+                .put("aiOn", Gemini.on(ctx))
+                .put("hasKey", Gemini.key(ctx).isNotEmpty())
+                .put("keyTail", Gemini.key(ctx).takeLast(4))
+                .put("aiUsed", Gemini.usedThisMonth(ctx))
                 .toString()
         }
 
         @JavascriptInterface fun setQuality(q: String) = Prefs.setQuality(ctx, q)
+        @JavascriptInterface fun setGeminiKey(k: String) = Gemini.setKey(ctx, k)
+        @JavascriptInterface fun setAiOn(v: Boolean) = Gemini.setOn(ctx, v)
+        @JavascriptInterface fun aiRedo(id: String) = SaveService.start(ctx, id, "ai")
 
         @JavascriptInterface fun igLogin() = startActivity(Intent(ctx, LoginActivity::class.java))
 

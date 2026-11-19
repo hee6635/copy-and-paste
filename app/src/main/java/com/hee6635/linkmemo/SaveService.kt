@@ -73,8 +73,14 @@ class SaveService : Service() {
         running.incrementAndGet()
         scope.launch {
             queue.withLock {
-                if (action == "comments") try { refetchComments(id) } catch (_: Throwable) {}
-                else try { process(id) } catch (e: Throwable) { fail(id, e.message ?: e.toString()) }
+                when (action) {
+                    "comments" -> try { refetchComments(id) } catch (_: Throwable) {}
+                    "ai" -> try { aiInto(id, true) } catch (_: Throwable) {}
+                    else -> {
+                        try { process(id) } catch (e: Throwable) { fail(id, e.message ?: e.toString()) }
+                        if (Store.get(this@SaveService, id)?.optString("status") == "done") try { aiInto(id, false) } catch (_: Throwable) {}
+                    }
+                }
             }
             if (running.decrementAndGet() == 0) stopIfIdle()
         }
@@ -161,6 +167,50 @@ class SaveService : Service() {
                 igCommentsInto(id, url)
                 emit(Store.patch(this, id) { it.put("status", "done"); it.remove("stage") })
             }
+        }
+    }
+
+    /** 폴더 경로 목록 (meta.json) — "여행 › 나트랑" */
+    private fun folderPaths(): List<String> = try {
+        val fs = JSONObject(Store.meta(this)).optJSONArray("folders") ?: JSONArray()
+        val byId = (0 until fs.length()).map { fs.getJSONObject(it) }.associateBy { it.optString("id") }
+        byId.values.map { f ->
+            val p = f.optString("parent").takeIf { it.isNotEmpty() && it != "null" }?.let { byId[it]?.optString("name") }
+            if (p != null) "$p › ${f.optString("name")}" else f.optString("name")
+        }
+    } catch (_: Throwable) { emptyList() }
+
+    /** Gemini 정리. 실패해도 저장은 그대로 두고 aiError 만 남김 */
+    private fun aiInto(id: String, force: Boolean) {
+        if (!(if (force) Gemini.key(this).isNotEmpty() else Gemini.on(this))) {
+            if (force) emit(Store.patch(this, id) { it.put("aiError", "Gemini API 키가 없어요 (설정에서 넣어 주세요)") })
+            return
+        }
+        val item = Store.get(this, id) ?: return
+        emit(Store.patch(this, id) { it.put("aiBusy", "AI 정리 중"); it.remove("aiError") })
+        updateNotif("AI 정리 중")
+        try {
+            val ai = Gemini.organize(this, item, folderPaths()) { st ->
+                emit(Store.patch(this, id) { it.put("aiBusy", "AI $st") })
+            }
+            emit(Store.patch(this, id) { o ->
+                o.put("ai", ai)
+                // 자동 태그: 있는 태그에 더하기
+                val tags = o.optJSONArray("tags") ?: JSONArray()
+                val have = (0 until tags.length()).map { tags.getString(it) }.toMutableSet()
+                ai.optJSONArray("tags")?.let { t -> for (i in 0 until t.length()) { val v = t.getString(i).removePrefix("#").trim(); if (v.isNotEmpty() && have.add(v) && tags.length() < 8) tags.put(v) } }
+                o.put("tags", tags)
+                // 정보 있는 댓글 ★
+                val cs = o.optJSONArray("comments")
+                val star = ai.optJSONArray("star")
+                if (cs != null) {
+                    for (i in 0 until cs.length()) cs.getJSONObject(i).remove("star")
+                    if (star != null) for (i in 0 until star.length()) cs.optJSONObject(star.optInt(i, -1))?.put("star", true)
+                }
+                o.remove("aiBusy"); o.remove("aiError")
+            })
+        } catch (e: Throwable) {
+            emit(Store.patch(this, id) { it.remove("aiBusy"); it.put("aiError", e.message ?: e.toString()) })
         }
     }
 
