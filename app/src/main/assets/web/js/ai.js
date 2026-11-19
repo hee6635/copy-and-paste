@@ -22,6 +22,19 @@ function renderAi(it) {
   const redo = (canSlide(it) ? '<button class="slbtn" data-slides>▶ 슬라이드</button>' : '') + '<button class="ai" data-airedo aria-label="다시 정리">AI ↻</button>';
   const suggHtml = sugg ? `<div class="sugg"><div class="t">폴더 추천 <b>${esc(sugg)}</b></div><button data-sugg>옮기기</button></div>` : '';
   const tipsTitle = places.length || rec ? '꼭 알아둘 팁' : '요약';
+  const longNote = it.longSkipped && !it.video ? `<div class="sec longnote"><span>긴 영상이라 링크만 저장했어요</span><button class="chip dark" data-dlvideo>영상 받기</button></div>` : '';
+  // 긴 영상: 꼭 알아둘 팁 → 목차 → 장소
+  const chs = (ai.chapters || []).filter(c => c && c.title);
+  if (chs.length) {
+    h += longNote + `<div class="sec"><div class="sh"><b>꼭 알아둘 팁</b>${redo}</div>${runinfo}
+      ${sum.map(x => `<div class="tip3"><b>·</b><span>${rich(x)}</span></div>`).join('')}${suggHtml}</div>`;
+    h += `<div class="sec"><div class="sh"><b>목차 ${chs.length}</b>${(it.ytChapters || []).length ? '<span class="badge2">유튜버 목차</span>' : ''}</div>${chs.map((c, i) => chapterRow(it, chs, i)).join('')}</div>`;
+    if (places.length) h += `<div class="sec"><div class="sh"><b>장소 ${places.length}</b></div>${places.map((p, i) => placeRow(it, p, i)).join('')}</div>`;
+    if (it.aiError) h += `<div class="sec"><div class="cmtx"><div class="why">다시 정리 실패: ${esc(String(it.aiError).split('\n')[0])}</div></div></div>`;
+    el.innerHTML = h;
+    return;
+  }
+  h += longNote;
   if (places.length) {
     h += `<div class="sec"><div class="sh"><b>장소 ${places.length}</b>${redo}</div>${runinfo}${places.map((p, i) => placeRow(it, p, i)).join('')}</div>`;
   } else if (rec) {
@@ -44,6 +57,13 @@ function renderAi(it) {
   el.innerHTML = h;
 }
 
+/** 긴 영상 목차 한 줄: 시간 · 제목 · 핵심 · (자막이 있으면) 이 부분 자막 펼치기 */
+function chapterRow(it, chs, i) {
+  const c = chs[i], end = i + 1 < chs.length ? +chs[i + 1].t : 1e9;
+  const subs = (it.subs || []).filter(x => +x.t >= +c.t - 1 && +x.t < end);
+  return `<div class="pr ch"><div class="pb"><b><span><button class="tm" data-seek="${+c.t}">${fmtT(c.t)}</button> ${esc(c.title)}</span></b><p>${rich(c.info || '')}</p>
+    ${subs.length ? `<button class="more2" data-chsub="${i}">이 부분 자막 ⌄</button><div class="chsub hide">${subs.map(x => `<div><b>${fmtT(x.t)}</b> ${esc(x.text)}</div>`).join('')}</div>` : ''}</div></div>`;
+}
 /** [[핵심]] → 숫자 · 시간이면 노란 칩, 아니면 굵게만 */
 const CHIPY = /[0-9０-９]|오전|오후|아침|저녁|새벽|점심|밤|분|시간|원|동|달러|성급|박|일차/;
 const rich = s => esc(s).replace(/\[\[(.+?)\]\]/g, (m, x) => CHIPY.test(x) ? `<span class="chip2">${x}</span>` : `<b>${x}</b>`);

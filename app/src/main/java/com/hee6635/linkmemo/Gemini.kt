@@ -504,6 +504,70 @@ object Gemini {
         throw IllegalStateException("모두 안 됨\n" + tried.toString().trim())
     }
 
+    // ── 긴 영상: 5분씩 목차 ──
+    private fun mmss(sec: Double): String { val t = sec.toInt(); return "%d:%02d".format(t / 60, t % 60) }
+    /**
+     * 긴 영상 목차: 5분씩 나눠 차례로. 자막이 있으면 글로만(토큰 적음), 없으면 유튜브 링크의 그 구간을 5초에 한 장면만.
+     * onPart(지금 부분, 전체 부분, 지금까지 목차) 로 바로바로 화면에.
+     */
+    fun chapters(ctx: Context, item: JSONObject, onStage: (String) -> Unit, onPart: (Int, Int, JSONArray) -> Unit, log: RunLog): JSONArray {
+        val key = key(ctx)
+        if (key.isEmpty()) throw IllegalStateException("Gemini API 키가 없어요 (설정에서 넣어 주세요)")
+        cancelled = false
+        val dur = item.optDouble("duration", 0.0)
+        val parts = maxOf(1, kotlin.math.ceil(dur / 300.0).toInt())
+        val subs = item.optJSONArray("subs")
+        val hasSubs = subs != null && subs.length() > 0
+        val yt = ytWatchUrl(item.optString("url"))
+        val yc = item.optJSONArray("ytChapters")
+        val all = JSONArray()
+        fun str() = JSONObject().put("type", "STRING")
+        val schema = JSONObject().put("type", "OBJECT").put("properties", JSONObject().put("chapters", JSONObject().put("type", "ARRAY").put("items",
+            JSONObject().put("type", "OBJECT").put("properties", JSONObject().put("t", JSONObject().put("type", "NUMBER")).put("title", str()).put("info", str()))
+                .put("required", JSONArray(listOf("t", "title", "info")))))).put("required", JSONArray(listOf("chapters")))
+        log.add(if (hasSubs) "자막으로 보기" else "영상 듬성듬성 보기(5초에 한 장면)", 0, "${mmss(dur)} · ${parts}부분", true)
+        for (p in 0 until parts) {
+            checkCancel()
+            val st = p * 300.0; val en = minOf(dur, (p + 1) * 300.0)
+            onStage("${p + 1} / $parts 부분 보는 중 (${mmss(st)} – ${mmss(en)})")
+            val reqParts = JSONArray()
+            val ycText = StringBuilder()
+            if (yc != null) for (i in 0 until yc.length()) { val c = yc.getJSONObject(i); val t = c.optDouble("t"); if (t >= st - 1 && t < en) ycText.append("${mmss(t)} ${c.optString("title")}\n") }
+            val sb = StringBuilder()
+            sb.append("이 영상의 ${mmss(st)} ~ ${mmss(en)} 부분 목차를 만들어. 한국어로.\n")
+            sb.append("- chapters: 내용이 바뀌는 곳마다 1~4개. t 는 그 내용이 시작되는 시각(초, 영상 전체 기준 ${st.toInt()}~${en.toInt()} 사이), title 은 15자 안팎, info 는 그 부분의 핵심 정보 한 줄(추천 · 가격 · 방법 · 주의). 숫자 · 시간은 [[ ]] 로.\n")
+            sb.append("- 인사 · 구독 부탁 · 광고 부분은 빼기.\n")
+            if (ycText.isNotEmpty()) sb.append("- 유튜버가 만든 목차(이 경계를 따르기):\n").append(ycText)
+            sb.append("[제목] ").append(item.optString("title")).append("\n")
+            if (hasSubs) {
+                sb.append("[자막]\n")
+                for (i in 0 until subs!!.length()) { val x = subs.getJSONObject(i); val t = x.optDouble("t"); if (t >= st && t < en) sb.append("[${mmss(t)}] ").append(x.optString("text")).append("\n") }
+            } else if (yt != null) {
+                reqParts.put(JSONObject().put("file_data", JSONObject().put("file_uri", yt))
+                    .put("video_metadata", JSONObject().put("start_offset", "${st.toInt()}s").put("end_offset", "${en.toInt()}s").put("fps", 0.2)))
+            } else break
+            reqParts.put(JSONObject().put("text", sb.toString()))
+            val req = JSONObject()
+                .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", reqParts)))
+                .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("responseSchema", schema).put("temperature", 0.3)
+                    .also { if (!hasSubs) it.put("mediaResolution", "MEDIA_RESOLUTION_LOW") })
+            val (text, used) = generate(ctx, key, req, onStage, log, !hasSubs, null)
+            count(ctx)
+            val res = JSONObject(text)
+            Usage.ok(ctx, used, res.optJSONObject("usageMetadata")?.optInt("totalTokenCount") ?: 0)
+            val out = res.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text") ?: "{}"
+            val ch = try { JSONObject(out.trim().removePrefix("```json").removeSuffix("```").trim()).optJSONArray("chapters") } catch (_: Exception) { null } ?: JSONArray()
+            for (i in 0 until ch.length()) {
+                val c = ch.getJSONObject(i)
+                var t = c.optDouble("t", st)
+                if (t < st - 5) t += st          // 부분 안의 시각으로 답했으면 전체 시각으로
+                all.put(c.put("t", t.coerceIn(st, maxOf(st, en))))
+            }
+            onPart(p + 1, parts, all)
+        }
+        return all
+    }
+
     // ── 내 저장함에 질문하기 ──
     /** context: 화면이 만든 메모 목록(JSON 글). 답 = {"answer":"…","refs":["id",…]} */
     fun ask(ctx: Context, question: String, context: String, history: String): String {

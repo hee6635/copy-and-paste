@@ -38,6 +38,27 @@ object Events {
     /** 폰이 먼저 읽은 화면 글자 (영상 보는 동안) */
     @Volatile var ocr: ((String, String) -> Unit)? = null
     fun ocr(id: String, json: String) { val l = ocr ?: return; main.post { l(id, json) } }
+    /** 긴 영상 목차가 부분마다 채워질 때 */
+    @Volatile var chapters: ((String, String) -> Unit)? = null
+    fun chapters(id: String, json: String) { val l = chapters ?: return; main.post { l(id, json) } }
     @Volatile var partial: ((String, String) -> Unit)? = null
     fun partial(id: String, text: String) { val l = partial ?: return; main.post { l(id, text) } }
+}
+
+/** 링크 저장 시작 (앱 화면 · 공유 작은 창 같이 씀). 이미 저장한 링크면 {"dup": id} */
+object Saver {
+    fun add(ctx: android.content.Context, url: String, mode: String, memo: String): JSONObject {
+        Store.findByUrl(ctx, url)?.let { return JSONObject().put("dup", it.optString("id")) }
+        val id = java.lang.Long.toString(System.currentTimeMillis(), 36) + (100..999).random()
+        val o = JSONObject()
+            .put("id", id).put("url", url).put("mode", mode).put("memo", memo)
+            .put("platform", SaveService.platformOf(url))
+            .put("title", url).put("status", "saving").put("stage", "대기 중").put("progress", 0)
+            .put("tags", org.json.JSONArray()).put("captures", org.json.JSONArray()).put("comments", org.json.JSONArray())
+            .put("createdAt", System.currentTimeMillis())
+        Store.put(ctx, o)
+        SaveService.start(ctx, id)
+        Events.item(o)
+        return o
+    }
 }

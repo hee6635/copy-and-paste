@@ -95,6 +95,23 @@ function renderUsage() {
     ${l.metric ? `<b>한도</b><span>${esc(String(l.metric).split('/').pop())}${l.value ? ' · ' + esc(l.value) + '번' : ''}</span>` : ''}
     ${l.retry ? `<b>다시 되는 때</b><span>${esc(l.retry)} 뒤</span>` : ''}</div>
     ${l.msg ? `<p class="p" style="font-size:13px;color:var(--sub);margin-top:8px">${esc(l.msg)}</p>` : ''}</div>` : '';
-  $('#usScroll').innerHTML = tbl(u.today, '오늘') + tbl(u.month, '이번 달') + lim +
+  // 남은 횟수(추정) · 예상
+  const lims = u.limits || {}, today = u.today || {}, month = u.month || {};
+  const remain = Object.keys(lims).map(m => ({ m, lim: lims[m], used: (today[m] || {}).n || 0 }));
+  const monTot = Object.keys(month).reduce((a, k) => a + (month[k].n || 0), 0);
+  const monTok = Object.keys(month).reduce((a, k) => a + (month[k].tok || 0), 0);
+  const perMemo = u.memos ? monTot / u.memos : 1;
+  const lite = remain.find(r => r.m === 'gemini-flash-lite-latest') || remain[0];
+  const canMore = lite ? Math.max(0, Math.floor((lite.lim - lite.used) / Math.max(1, perMemo))) : 0;
+  const proj = u.dom ? Math.round(monTot / u.dom * u.dim) : 0;
+  const projTok = u.dom ? Math.round(monTok / u.dom * u.dim) : 0;
+  const remainHtml = `<div class="sec"><div class="sh"><b>오늘 남은 횟수 (추정)</b></div><div class="ust">
+      <span class="ush" style="text-align:left">모델</span><span class="ush">남음</span><span class="ush">한도</span>
+      ${remain.map(r => `<b>${esc(mLabel(r.m))}</b><span>${Math.max(0, r.lim - r.used)}</span><button class="limb" data-lim="${esc(r.m)}" data-v="${r.lim}">${r.lim} ✎</button>`).join('')}</div></div>
+    <div class="sec"><div class="sh"><b>예상</b></div><div class="ust2">
+      <b>오늘 더 저장할 수 있는 메모</b><span>약 ${canMore}개</span>
+      <b>메모 하나에 평균</b><span>${perMemo.toFixed(1)}번</span>
+      <b>이번 달 예상</b><span>${proj.toLocaleString()}번 · ${projTok.toLocaleString()} 토큰</span></div></div>`;
+  $('#usScroll').innerHTML = remainHtml + tbl(u.today, '오늘') + tbl(u.month, '이번 달') + lim +
     `<div class="group"><div class="row"><span class="rt">하루 한도 초기화</span><span class="rv">${esc(u.reset || '')}</span></div></div>`;
 }

@@ -41,6 +41,26 @@ window.App = {
     h.pending = false; if (r.error) h.error = r.error; else { h.a = r.answer || ''; h.refs = (r.refs || []).filter(id => byId(id)); }
     renderAsk();
   },
+  onChapters(id, o) {
+    if (cur !== id || !live || !$('#lv')) return;
+    let box = $('#lvCh');
+    if (!box) {
+      collapse($('#lvDesc')); collapse($('#lvTs')); collapse($('#lvProg'));
+      box = document.createElement('div'); box.id = 'lvCh'; box.className = 'sec lvpl';
+      box.innerHTML = '<div class="parts"></div><div class="sh"><b>목차</b></div><div class="lvchl"></div>';
+      $('#lv').appendChild(box); live.ch = 0;
+    }
+    box.querySelector('.parts').innerHTML = Array.from({ length: o.parts }, (_, i) => `<i class="${i < o.part ? 'd' : i === o.part ? 'r' : ''}"></i>`).join('');
+    const list = box.querySelector('.lvchl');
+    for (; live.ch < o.chapters.length; live.ch++) {
+      const c = o.chapters[live.ch];
+      typeQ = typeQ.then(() => new Promise(r => {
+        const d = document.createElement('div'); d.className = 'pr ch pop';
+        d.innerHTML = `<div class="pb"><b><span><span class="tm">${fmtT(c.t)}</span> ${esc(c.title)}</span></b><p>${rich(c.info || '')}</p></div>`;
+        list.appendChild(d); setTimeout(r, 220);
+      }));
+    }
+  },
   onPartial(id, txt) { if (cur === id && $('#detail').classList.contains('open')) liveUpdate(txt); },
   onDiag(json) {
     const o = JSON.parse(json);
@@ -77,6 +97,9 @@ document.addEventListener('click', e => {
     meta.order = meta.order.filter(id => !ids.includes(id)); saveMeta(); endSelect(); toast(ids.length + '개를 지웠어요');
   });
   if (t.closest('#ordDone')) { saveOrder(); closePage('order'); if (selecting) endSelect(); toast('순서를 바꿨어요'); return; }
+  if (t.closest('[data-dlvideo]')) { A.downloadVideo(cur); toast('영상을 받는 중이에요'); return; }
+  const cs2 = t.closest('[data-chsub]'); if (cs2) { cs2.nextElementSibling.classList.toggle('hide'); cs2.textContent = cs2.nextElementSibling.classList.contains('hide') ? '이 부분 자막 ⌄' : '접기 ⌃'; return; }
+  const lm = t.closest('[data-lim]'); if (lm) { const m = lm.dataset.lim; return ask(mLabel(m) + ' 하루 한도', '한도 (번)', v => { const n = parseInt(v, 10); if (n > 0) { A.setLimit(m, n); renderUsage(); } }, lm.dataset.v); }
   const dm = t.closest('[data-dm]'); if (dm) return setDockMode(dm.dataset.dm);
   const ex = t.closest('[data-askex]'); if (ex) return sendAsk(ex.dataset.askex);
   const arw = t.closest('.arow'); if (arw) return openDetail(arw.dataset.id);

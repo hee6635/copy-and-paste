@@ -69,6 +69,7 @@ class SaveService : Service() {
             queue.withLock {
                 when (action) {
                     "comments" -> try { refetchComments(id) } catch (_: Throwable) {}
+                    "video" -> try { downloadLater(id) } catch (_: Throwable) {}
                     "ai" -> try { aiInto(id, true) } catch (_: Throwable) {}
                     else -> {
                         try { process(id) } catch (e: Throwable) { fail(id, e.message ?: e.toString()) }
@@ -256,63 +257,54 @@ class SaveService : Service() {
     }
 
     // ── 유튜브 · 인스타 ──
+    /** 10분 넘으면 긴 영상: 영상은 받지 않고(링크만), 목차 방식으로 정리 */
+    private val LONG_SEC = 600.0
+
     private fun saveWithYtdlp(id: String, url: String, withVideo: Boolean) {
         stage(id, "준비 중", 0)
         Tools.init(this)
         val dir = Store.dir(this, id)
         dir.listFiles()?.filter { it.name.startsWith("media.") }?.forEach { it.delete() }
+        val platform = platformOf(url)
 
+        // 1) 내용 먼저: 설명 · 댓글 · 썸네일 · (유튜브) 자막
         val req = YoutubeDLRequest(url)
         req.addOption("--no-playlist")
-        req.addOption("--no-mtime")
+        req.addOption("--skip-download")
         req.addOption("--write-info-json")
         req.addOption("--write-thumbnail")
         req.addOption("--convert-thumbnails", "jpg")
         req.addOption("--write-comments")
         req.addOption("--extractor-args", "youtube:max_comments=60,all,0,0;comment_sort=top")
         req.addOption("--socket-timeout", "30")
+        if (platform == "youtube") {
+            req.addOption("--write-subs"); req.addOption("--write-auto-subs")
+            req.addOption("--sub-langs", "ko,ko-orig,en,en-orig,ja,vi,zh-Hans")
+            req.addOption("--sub-format", "vtt")
+        }
         req.addOption("-o", File(dir, "media.%(ext)s").absolutePath)
-        if (platformOf(url) == "instagram") Ig.cookieFile(this)?.let { req.addOption("--cookies", it.absolutePath) }
-        if (withVideo) {
-            req.addOption("-f", formatFor(Prefs.quality(this)))
-            req.addOption("--merge-output-format", "mp4")
-        } else {
-            req.addOption("--skip-download")
-        }
-
-        stage(id, if (withVideo) "영상 받는 중" else "내용 읽는 중", 0)
-        var last = 0L
-        YoutubeDL.getInstance().execute(req, "save-$id", false) { p, _, _ ->
-            val now = System.currentTimeMillis()
-            if (now - last > 700) {
-                last = now
-                val pct = p.toInt().coerceIn(0, 100)
-                stage(id, "영상 받는 중", pct)
-                updateNotif("저장 중 $pct%")
-            }
-        }
+        if (platform == "instagram") Ig.cookieFile(this)?.let { req.addOption("--cookies", it.absolutePath) }
+        stage(id, "내용 읽는 중", 0)
+        YoutubeDL.getInstance().execute(req, "save-$id", false, null)
 
         val infoFile = File(dir, "media.info.json")
         if (!infoFile.exists()) throw IllegalStateException("내용을 읽지 못했어요")
         val info = JSONObject(infoFile.readText())
-
         val thumb = File(dir, "media.jpg")
         if (thumb.exists()) thumb.renameTo(File(dir, "thumb.jpg"))
-        val video = dir.listFiles()?.firstOrNull {
-            it.name.startsWith("media.") && it.extension in setOf("mp4", "webm", "mkv", "mov")
-        }
-        var videoName: String? = null
-        if (video != null) {
-            videoName = "video." + video.extension
-            video.renameTo(File(dir, videoName))
-        }
+        val subs = readSubs(dir)
         infoFile.delete()
         dir.listFiles()?.filter { it.name.startsWith("media.") }?.forEach { it.delete() }
 
-        val platform = platformOf(url)
+        val dur = info.optDouble("duration", 0.0)
+        val long = dur >= LONG_SEC
+
+        // 2) 영상: 짧은 것만 (긴 영상은 링크만 + 나중에 [영상 받기])
+        var videoName: String? = null
+        if (withVideo && !long) videoName = downloadVideoFile(id, url)
+
         val desc = info.optString("description").trim()
         val w = info.optInt("width"); val h = info.optInt("height")
-        val dur = info.optDouble("duration", 0.0)
         val rawTitle = info.optString("title").trim()
         val title = if (platform == "instagram" || rawTitle.isEmpty() || rawTitle.startsWith("Video by"))
             firstLine(desc).ifEmpty { rawTitle } else rawTitle
@@ -324,6 +316,8 @@ class SaveService : Service() {
             info.has("duration") || videoName != null -> "릴스"
             else -> "게시물"
         }
+        val chapters = JSONArray()
+        info.optJSONArray("chapters")?.let { c -> for (i in 0 until c.length()) { val x = c.getJSONObject(i); chapters.put(JSONObject().put("t", x.optDouble("start_time")).put("title", x.optString("title"))) } }
 
         val done = Store.patch(this, id) {
             it.put("status", "done"); it.remove("stage"); it.remove("error"); it.put("progress", 100)
@@ -335,12 +329,78 @@ class SaveService : Service() {
             it.put("duration", dur)
             it.put("comments", topComments(info.optJSONArray("comments")))
             if (File(dir, "thumb.jpg").exists()) it.put("thumb", "thumb.jpg")
-            if (videoName != null) {
-                it.put("video", videoName); it.put("videoSize", File(dir, videoName).length())
-                if (w > 0 && h > 0) { it.put("w", w); it.put("h", h) }
-            }
+            if (w > 0 && h > 0) { it.put("w", w); it.put("h", h) }
+            if (subs.length() > 0) it.put("subs", subs)
+            if (chapters.length() > 0) it.put("ytChapters", chapters)
+            if (long) it.put("long", true)
+            if (long && withVideo) it.put("longSkipped", true)
+            if (videoName != null) { it.put("video", videoName); it.put("videoSize", File(dir, videoName).length()) }
         }
         emit(done)
+    }
+
+    /** 영상 파일만 받기 (진행률 표시) → video.<확장자> */
+    internal fun downloadVideoFile(id: String, url: String): String? {
+        val dir = Store.dir(this, id)
+        dir.listFiles()?.filter { it.name.startsWith("media.") }?.forEach { it.delete() }
+        val req = YoutubeDLRequest(url)
+        req.addOption("--no-playlist"); req.addOption("--no-mtime")
+        req.addOption("-f", formatFor(Prefs.quality(this)))
+        req.addOption("--merge-output-format", "mp4")
+        req.addOption("--socket-timeout", "30")
+        req.addOption("-o", File(dir, "media.%(ext)s").absolutePath)
+        if (platformOf(url) == "instagram") Ig.cookieFile(this)?.let { req.addOption("--cookies", it.absolutePath) }
+        stage(id, "영상 받는 중", 0)
+        var last = 0L
+        YoutubeDL.getInstance().execute(req, "video-$id", false) { p, _, _ ->
+            val now = System.currentTimeMillis()
+            if (now - last > 700) { last = now; val pct = p.toInt().coerceIn(0, 100); stage(id, "영상 받는 중", pct); updateNotif("저장 중 $pct%") }
+        }
+        val v = dir.listFiles()?.firstOrNull { it.name.startsWith("media.") && it.extension in setOf("mp4", "webm", "mkv", "mov") } ?: return null
+        val name = "video." + v.extension
+        v.renameTo(File(dir, name))
+        dir.listFiles()?.filter { it.name.startsWith("media.") }?.forEach { it.delete() }
+        return name
+    }
+
+    /** 긴 영상도 [영상 받기]를 누르면 받기 */
+    private fun downloadLater(id: String) {
+        val item = Store.get(this, id) ?: return
+        try {
+            val name = downloadVideoFile(id, item.optString("url")) ?: throw IllegalStateException("영상 파일이 안 생겼어요")
+            emit(Store.patch(this, id) { it.put("status", "done"); it.remove("stage"); it.remove("longSkipped"); it.put("video", name); it.put("videoSize", File(Store.dir(this, id), name).length()) })
+        } catch (e: Throwable) {
+            emit(Store.patch(this, id) { it.put("status", "done"); it.remove("stage"); it.put("videoError", friendly(e.message ?: e.toString())) })
+        }
+    }
+
+    /** 자막(vtt) → [{t, text}] 약 10초씩 묶음. 한국어 → 영어 → 그 밖 순으로 하나 고름 */
+    private fun readSubs(dir: File): JSONArray {
+        val files = dir.listFiles()?.filter { it.name.startsWith("media.") && it.name.endsWith(".vtt") } ?: emptyList()
+        val pick = listOf("media.ko.", "media.ko-", "media.en.", "media.en-").firstNotNullOfOrNull { pre -> files.firstOrNull { it.name.startsWith(pre) } } ?: files.firstOrNull()
+            ?: return JSONArray()
+        val out = JSONArray()
+        val tm = Regex("(\\d+):(\\d{2}):(\\d{2})[.,](\\d{3})\\s+-->")
+        var cur = -1.0; var start = 0.0; val buf = StringBuilder(); var lastLine = ""; var total = 0
+        fun flush() { if (buf.isNotBlank()) { out.put(JSONObject().put("t", start).put("text", buf.toString().trim())); total += buf.length }; buf.setLength(0) }
+        for (raw in pick.readLines()) {
+            val m = tm.find(raw)
+            if (m != null) {
+                val (hh, mm, ss, ms) = m.destructured
+                cur = hh.toInt() * 3600 + mm.toInt() * 60 + ss.toInt() + ms.toInt() / 1000.0
+                if (buf.isEmpty()) start = cur
+                if (cur - start >= 10) { flush(); start = cur }
+                continue
+            }
+            if (cur < 0 || raw.isBlank() || raw.startsWith("WEBVTT") || raw.startsWith("Kind:") || raw.startsWith("Language:")) continue
+            val line = raw.replace(Regex("<[^>]+>"), "").replace("&nbsp;", " ").trim()
+            if (line.isEmpty() || line == lastLine) continue
+            lastLine = line
+            buf.append(line).append(' ')
+            if (total > 80000) break
+        }
+        flush()
+        return out
     }
 
     private fun formatFor(q: String): String = when (q) {

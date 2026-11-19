@@ -108,6 +108,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         Events.listener = { o -> js("App.onItem(${JSONObject.quote(o.toString())})") }
+        Events.chapters = { id, j -> js("App.onChapters&&App.onChapters(${JSONObject.quote(id)},$j)") }
         Events.ocr = { id, j -> js("App.onOcr&&App.onOcr(${JSONObject.quote(id)},${j})") }
         Events.partial = { id, txt -> js("App.onPartial&&App.onPartial(${JSONObject.quote(id)},${JSONObject.quote(txt)})") }
         web.loadUrl("https://$HOST/assets/web/index.html")
@@ -194,19 +195,7 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun items(): String = Store.all(ctx)
 
         /** 새 링크 저장. 이미 저장한 링크면 {"dup": id} */
-        @JavascriptInterface fun add(url: String, mode: String, memo: String): String {
-            Store.findByUrl(ctx, url)?.let { return JSONObject().put("dup", it.optString("id")).toString() }
-            val id = java.lang.Long.toString(System.currentTimeMillis(), 36) + (100..999).random()
-            val o = JSONObject()
-                .put("id", id).put("url", url).put("mode", mode).put("memo", memo)
-                .put("platform", SaveService.platformOf(url))
-                .put("title", url).put("status", "saving").put("stage", "대기 중").put("progress", 0)
-                .put("tags", JSONArray()).put("captures", JSONArray()).put("comments", JSONArray())
-                .put("createdAt", System.currentTimeMillis())
-            Store.put(ctx, o)
-            SaveService.start(ctx, id)
-            return o.toString()
-        }
+        @JavascriptInterface fun add(url: String, mode: String, memo: String): String = Saver.add(ctx, url, mode, memo).toString()
 
         /** 화면에서 고친 칸만 덮어쓰기 (메모 · 태그 · 캡처 메모 · 제목) */
         @JavascriptInterface fun update(id: String, fields: String): String {
@@ -335,6 +324,9 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun aiRedo(id: String) = SaveService.start(ctx, id, "ai")
         @JavascriptInterface fun aiCancel() = Gemini.cancel()
         @JavascriptInterface fun usage(): String = Usage.summary(ctx)
+        @JavascriptInterface fun setLimit(model: String, n: Int) = Usage.setLimit(ctx, model, n)
+        /** 긴 영상도 영상 받기 */
+        @JavascriptInterface fun downloadVideo(id: String) = SaveService.start(ctx, id, "video")
         @JavascriptInterface fun backup(withVideo: Boolean) {
             backupVideo = withVideo
             val d = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())

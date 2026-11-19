@@ -48,8 +48,43 @@ internal fun SaveService.aiInto(id: String, force: Boolean) {
         return
     }
     val item = Store.get(this, id) ?: return
+    Usage.memo(this)
     emit(Store.patch(this, id) { it.put("aiBusy", "AI 정리 준비 중"); it.put("aiBusyAt", System.currentTimeMillis()); it.remove("aiError"); it.remove("aiLog") })
     updateNotif("AI 정리 중")
+    // 긴 영상(10분 넘음): 5분씩 목차 → 목차를 글로 붙여 짧게 한 번 더 정리(팁 · 장소 · 태그)
+    if (item.optBoolean("long") && SaveService.platformOf(item.optString("url")) == "youtube") {
+        try {
+            val log = Gemini.RunLog(this)
+            val ch = Gemini.chapters(this, item, { st -> emit(Store.patch(this, id) { it.put("aiBusy", "AI $st") }) },
+                { p, n, all -> Events.chapters(id, JSONObject().put("part", p).put("parts", n).put("chapters", all).toString()) }, log)
+            val pseudo = JSONObject(item.toString())
+            pseudo.remove("subs"); pseudo.remove("video")
+            val toc = StringBuilder()
+            for (i in 0 until ch.length()) { val c = ch.getJSONObject(i); val t = c.optDouble("t").toInt(); toc.append("%d:%02d %s — %s\n".format(t / 60, t % 60, c.optString("title"), c.optString("info"))) }
+            pseudo.put("desc", item.optString("desc").take(3000) + "\n\n[영상 목차]\n" + toc)
+            emit(Store.patch(this, id) { it.put("aiBusy", "AI 팁 정리 중") })
+            val ai = Gemini.organize(this, pseudo, folderPaths(), { st -> emit(Store.patch(this, id) { it.put("aiBusy", "AI $st") }) })
+            ai.put("chapters", ch).put("long", true)
+            val rows = ai.optJSONObject("log")?.optJSONArray("rows")
+            if (rows != null) for (i in 0 until log.rows.length()) rows.put(log.rows.get(i))
+            emit(Store.patch(this, id) { o ->
+                o.put("ai", ai)
+                ai.optString("category").takeIf { it.isNotEmpty() }?.let { o.put("category", it) }
+                val tags = o.optJSONArray("tags") ?: JSONArray()
+                val have = (0 until tags.length()).map { tags.getString(it) }.toMutableSet()
+                ai.optJSONArray("tags")?.let { t -> for (i in 0 until t.length()) { val v = t.getString(i).removePrefix("#").trim(); if (v.isNotEmpty() && have.add(v) && tags.length() < 8) tags.put(v) } }
+                o.put("tags", tags)
+                o.remove("aiBusy"); o.remove("aiBusyAt"); o.remove("aiError"); o.remove("aiLog")
+            })
+        } catch (e: Throwable) {
+            emit(Store.patch(this, id) {
+                it.remove("aiBusy"); it.remove("aiBusyAt")
+                it.put("aiError", if (e is Gemini.AiFail) (e.message ?: "") else Gemini.explain(e))
+                if (e is Gemini.AiFail) it.put("aiLog", e.log)
+            })
+        }
+        return
+    }
     try {
         // 링크만 저장한 것도 영상 보기: 유튜브는 링크 그대로, 인스타는 잠깐 받아서
         var temp: File? = null; var yt: String? = null

@@ -17,6 +17,11 @@ object Usage {
     private fun day() = SimpleDateFormat("yyyyMMdd", Locale.US).apply { timeZone = TimeZone.getTimeZone("America/Los_Angeles") }.format(Date())
     private fun load(ctx: Context) = try { JSONObject(sp(ctx).getString("u", "{}") ?: "{}") } catch (_: Exception) { JSONObject() }
 
+    /** 모델별 하루 한도(대략값으로 시작 · 429 에서 받은 숫자로 바뀜 · 설정에서 고칠 수 있음) */
+    private val DEFAULT_LIMIT = mapOf("gemini-flash-lite-latest" to 1000, "gemini-flash-latest" to 250)
+    fun limitOf(ctx: Context, model: String): Int = sp(ctx).getInt("lim_$model", DEFAULT_LIMIT[model] ?: 250)
+    fun setLimit(ctx: Context, model: String, n: Int) = sp(ctx).edit().putInt("lim_$model", n).putBoolean("limSet_$model", true).apply()
+
     @Synchronized fun ok(ctx: Context, model: String, tokens: Int) {
         val u = load(ctx)
         val days = u.optJSONObject("days") ?: JSONObject().also { u.put("days", it) }
@@ -28,6 +33,9 @@ object Usage {
         if (keys.size > 40) keys.take(keys.size - 40).forEach { days.remove(it) }
         sp(ctx).edit().putString("u", u.toString()).apply()
     }
+
+    /** 메모 하나를 정리할 때마다 (평균 계산용) */
+    fun memo(ctx: Context) { val k = "memos_" + day().take(6); sp(ctx).edit().putInt(k, sp(ctx).getInt(k, 0) + 1).apply() }
 
     /** 429 응답 본문에서 어떤 한도에 걸렸는지 · 얼마 뒤 되는지 */
     @Synchronized fun limit(ctx: Context, model: String, raw: String) {
@@ -49,6 +57,10 @@ object Usage {
         } catch (_: Exception) { o.put("msg", raw.take(300)) }
         u.put("last429", o)
         sp(ctx).edit().putString("u", u.toString()).apply()
+        // 하루 한도 숫자를 구글이 알려 줬으면 그걸로 바꿈
+        val v = o.optString("value").toIntOrNull()
+        val per = (o.optString("metric") + o.optString("quotaId")).lowercase()
+        if (v != null && v > 0 && ("day" in per)) sp(ctx).edit().putInt("lim_$model", v).apply()
     }
 
     /** 화면용: 오늘 · 이번 달 모델별 + 마지막 한도 + 다음 초기화(한국 시각) */
@@ -68,6 +80,14 @@ object Usage {
             add(java.util.Calendar.DAY_OF_MONTH, 1); set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0)
         }
         val reset = SimpleDateFormat("M월 d일 a h시", Locale.KOREA).apply { timeZone = TimeZone.getTimeZone("Asia/Seoul") }.format(la.time)
-        return JSONObject().put("today", today).put("month", mon).put("last429", u.optJSONObject("last429") ?: JSONObject()).put("reset", reset).toString()
+        // 예상: 이번 달 하루 평균 · 남은 날 (태평양 날짜 기준)
+        val cal = java.util.Calendar.getInstance(TimeZone.getTimeZone("America/Los_Angeles"))
+        val dom = cal.get(java.util.Calendar.DAY_OF_MONTH); val dim = cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+        val models = (DEFAULT_LIMIT.keys + today.keys().asSequence().toList()).distinct()
+        val lim = JSONObject(); models.forEach { lim.put(it, limitOf(ctx, it)) }
+        // 메모 하나에 평균 몇 번 (AI 정리 1번 + 긴 영상 부분 등) — 이번 달 기준
+        val memos = sp(ctx).getInt("memos_$month", 0)
+        return JSONObject().put("today", today).put("month", mon).put("last429", u.optJSONObject("last429") ?: JSONObject()).put("reset", reset)
+            .put("limits", lim).put("dom", dom).put("dim", dim).put("memos", memos).toString()
     }
 }
