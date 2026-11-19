@@ -212,7 +212,22 @@ class SaveService : Service() {
                 Gemini.organize(this, item, folderPaths(), { st ->
                     emit(Store.patch(this, id) { it.put("aiBusy", "AI $st") })
                 }, temp, yt, pre)
-            } finally { temp?.delete() }
+            } catch (e: Throwable) { temp?.delete(); throw e }
+            // AI 가 고른 중요 장면 자동 캡처 (영상 파일이 있을 때: 저장한 영상 · 잠깐 받은 영상 · 유튜브는 작게 잠깐 받기)
+            val shots = ai.optJSONArray("keyshots")
+            if (shots != null && shots.length() > 0) {
+                try {
+                    emit(Store.patch(this, id) { it.put("aiBusy", "AI 중요 장면 캡처 중") })
+                    val saved = item.optString("video").takeIf { it.isNotEmpty() }?.let { File(Store.dir(this, id), it) }?.takeIf { it.exists() }
+                    var src: File? = saved ?: temp?.takeIf { it.exists() }
+                    if (src == null && platformOf(url) == "youtube") {
+                        src = try { tempVideo(id, url) } catch (_: Throwable) { null }
+                        temp = src
+                    }
+                    if (src != null) autoCaptures(id, src, shots)
+                } catch (_: Throwable) {
+                } finally { temp?.delete() }
+            } else temp?.delete()
             emit(Store.patch(this, id) { o ->
                 o.put("ai", ai)
                 ai.optString("category").takeIf { it.isNotEmpty() }?.let { o.put("category", it) }
@@ -239,14 +254,42 @@ class SaveService : Service() {
         }
     }
 
-    /** AI 가 볼 영상을 작게(480p 이하) 잠깐 받기 */
+    /** 예전 자동 캡처는 지우고, 새로 고른 장면을 잘라 붙임 + 글자 읽기 */
+    private fun autoCaptures(id: String, video: File, shots: JSONArray) {
+        val dir = Store.dir(this, id)
+        Store.get(this, id)?.optJSONArray("captures")?.let { arr ->
+            for (i in 0 until arr.length()) { val c = arr.getJSONObject(i); if (c.optBoolean("ai")) File(dir, c.optString("file")).delete() }
+        }
+        val made = mutableListOf<JSONObject>()
+        for (i in 0 until minOf(5, shots.length())) {
+            val k = shots.getJSONObject(i)
+            val t = k.optDouble("t", -1.0); if (t < 0) continue
+            val capId = "cap_ai_${System.currentTimeMillis()}_$i"
+            val f = File(dir, "$capId.jpg")
+            if (!Ocr.frame(video, t, f)) continue
+            val c = JSONObject().put("id", capId).put("t", t).put("file", f.name).put("text", "").put("memo", k.optString("why")).put("ocr", "busy").put("ai", true)
+            val sec = k.optString("sec"); val idx = k.optInt("idx", -1)
+            if ((sec == "summary" || sec == "facts") && idx >= 0) c.put("at", JSONObject().put("sec", sec).put("i", idx))
+            made += c
+        }
+        emit(Store.patch(this, id) { o ->
+            val arr = o.optJSONArray("captures") ?: JSONArray()
+            val out = JSONArray()
+            for (i in 0 until arr.length()) if (!arr.getJSONObject(i).optBoolean("ai")) out.put(arr.get(i))
+            made.forEach { out.put(it) }
+            o.put("captures", out)
+        })
+        made.forEach { Ocr.run(this, id, it.getString("id"), File(dir, it.getString("file"))) }
+    }
+
+    /** AI 가 볼 영상을 작게(360p 이하) 잠깐 받기 */
     private fun tempVideo(id: String, url: String): File {
         Tools.init(this)
         val dir = File(cacheDir, "aiv").also { it.mkdirs() }
         dir.listFiles()?.filter { it.name.startsWith(id) }?.forEach { it.delete() }
         val req = YoutubeDLRequest(url)
         req.addOption("--no-playlist")
-        req.addOption("-f", "b[height<=480][ext=mp4]/bv*[height<=480]+ba/b[height<=480]/b")
+        req.addOption("-f", "b[height<=360][ext=mp4]/bv*[height<=360]+ba/b[height<=360]/wv*+ba/w")
         req.addOption("--merge-output-format", "mp4")
         req.addOption("-o", File(dir, "$id.%(ext)s").absolutePath)
         if (platformOf(url) == "instagram") Ig.cookieFile(this)?.let { req.addOption("--cookies", it.absolutePath) }

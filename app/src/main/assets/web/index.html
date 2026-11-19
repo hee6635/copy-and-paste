@@ -110,6 +110,30 @@
   <div class="scroll"><div id="ordList" class="ordlist"></div></div>
 </section>
 
+<!-- 잘라쓰기 -->
+<section id="crop" class="page sub dark" aria-hidden="true">
+  <header class="top c">
+    <button class="ib" data-back aria-label="닫기"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="t" id="cropTitle">잘라쓰기</div><div class="ib"></div>
+  </header>
+  <div class="cropwrap" id="cropWrap"><img id="cropImg" alt=""><div class="cropbox" id="cropBox"><i data-h="tl"></i><i data-h="tr"></i><i data-h="bl"></i><i data-h="br"></i></div></div>
+  <div class="cbar"><button class="cfull" id="cropFull">전체 그대로</button><button class="cok" id="cropOk">자르기</button></div>
+</section>
+
+<!-- 캡처 고르기 -->
+<section id="capsel" class="page sub" aria-hidden="true">
+  <header class="top c">
+    <button class="ib" data-back aria-label="닫기"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="t" id="csCount">0개 선택</div>
+    <button class="txtbtn" id="csAll">전체</button>
+  </header>
+  <div class="scroll"><div class="cg" id="csGrid"></div></div>
+  <nav class="bar5 bar2">
+    <button id="csMove"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>다른 줄로 옮기기</button>
+    <button id="csDel" class="danger"><svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>지우기</button>
+  </nav>
+</section>
+
 <div id="dim" class="dim"></div>
 
 <!-- 폴더로 옮기기 -->
@@ -118,6 +142,15 @@
   <div class="stitle" id="mvTitle">폴더</div>
   <div class="flist" id="mvList"></div>
   <button class="bigbtn gray" id="mvNew">＋ 새 폴더</button>
+</section>
+
+<!-- 붙일 곳 -->
+<section id="attSheet" class="sheet" aria-hidden="true">
+  <div class="grab"></div>
+  <div class="stitle">어디에 붙일까요?</div>
+  <div class="attprev"><img id="attImg" alt=""><span id="attInfo"></span></div>
+  <div class="olist attlist" id="attList"></div>
+  <button class="bigbtn" id="attGo">붙이기</button>
 </section>
 
 <!-- 고르기 창 -->

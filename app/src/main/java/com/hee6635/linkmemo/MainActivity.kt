@@ -209,17 +209,32 @@ class MainActivity : ComponentActivity() {
         }
 
         /** 지금 장면 캡처: 화면이 보낸 JPG(base64) 저장 → 글자 읽기는 뒤에서 */
-        @JavascriptInterface fun capture(id: String, t: Double, b64: String): String {
+        /** at: 붙일 곳 {"sec":"summary|facts","i":n} 또는 "" (캡처 칸에만) */
+        @JavascriptInterface fun capture(id: String, t: Double, b64: String, at: String): String {
             val capId = "cap_" + System.currentTimeMillis()
             val file = File(Store.dir(ctx, id), "$capId.jpg")
             file.writeBytes(Base64.decode(b64.substringAfter(","), Base64.DEFAULT))
             val o = Store.patch(ctx, id) {
                 val arr = it.optJSONArray("captures") ?: JSONArray()
-                arr.put(JSONObject().put("id", capId).put("t", t).put("file", file.name).put("text", "").put("memo", "").put("ocr", "busy"))
+                val c = JSONObject().put("id", capId).put("t", t).put("file", file.name).put("text", "").put("memo", "").put("ocr", "busy")
+                if (at.isNotBlank()) c.put("at", JSONObject(at))
+                arr.put(c)
                 it.put("captures", arr)
             }
-            ocr(id, capId, file)
+            Ocr.run(ctx, id, capId, file)
             return o?.toString() ?: ""
+        }
+
+        /** 캡처 여러 개 지우기 */
+        @JavascriptInterface fun removeCaptures(id: String, ids: String): String {
+            val set = JSONArray(ids).let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }
+            set.forEach { File(Store.dir(ctx, id), "$it.jpg").delete() }
+            return Store.patch(ctx, id) {
+                val arr = it.optJSONArray("captures") ?: JSONArray()
+                val out = JSONArray()
+                for (i in 0 until arr.length()) if (arr.getJSONObject(i).optString("id") !in set) out.put(arr.get(i))
+                it.put("captures", out)
+            }?.toString() ?: ""
         }
 
         @JavascriptInterface fun removeCapture(id: String, capId: String): String {
@@ -346,24 +361,6 @@ class MainActivity : ComponentActivity() {
 
         /** 이미 저장한 메모의 댓글만 다시 가져오기 */
         @JavascriptInterface fun refetchComments(id: String) = SaveService.start(ctx, id, "comments")
-    }
-
-    private fun ocr(id: String, capId: String, file: File) {
-        val bmp = BitmapFactory.decodeFile(file.absolutePath) ?: return
-        TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
-            .process(InputImage.fromBitmap(bmp, 0))
-            .addOnCompleteListener { task ->
-                val text = if (task.isSuccessful) task.result.text.trim() else ""
-                thread {
-                    Store.patch(this, id) {
-                        val arr = it.optJSONArray("captures") ?: return@patch
-                        for (i in 0 until arr.length()) {
-                            val c = arr.getJSONObject(i)
-                            if (c.optString("id") == capId) { c.put("text", text); c.remove("ocr") }
-                        }
-                    }?.let { Events.item(it) }
-                }
-            }
     }
 
     override fun onPause() { PhoneState.markForeground(false); super.onPause() }

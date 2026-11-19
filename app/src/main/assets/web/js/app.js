@@ -175,7 +175,9 @@
   let lpT = 0, lpX = 0, lpY = 0, lpFired = false;
   document.addEventListener('pointerdown', e => {
     const c = e.target.closest('.card'); const ch = e.target.closest('[data-ft],[data-fs]');
+    const cp = e.target.closest('#dScroll [data-cap]');
     lpFired = false;
+    if (cp) { lpX = e.clientX; lpY = e.clientY; clearTimeout(lpT); lpT = setTimeout(() => { lpFired = true; openCapSel(cp.dataset.cap); }, 450); return; }
     if (!c && !(ch && (ch.dataset.ft || ch.dataset.fs))) return;
     lpX = e.clientX; lpY = e.clientY;
     clearTimeout(lpT);
@@ -408,7 +410,10 @@
       } else if (it.thumb) {
         media = `<div class="video"><img src="${fileUrl(it.id, it.thumb)}" alt=""></div>`;
       }
-      sc.innerHTML = media + `<div class="meta"></div><div id="dAi"></div><div id="dCaps"></div><div id="dTabs"></div><div id="dBody"></div>
+      accOpen = {};
+      sc.innerHTML = media + `<div class="meta"></div><div id="dAi"></div><div id="dTips"></div><div id="dCaps"></div>
+        <button class="acc" data-acc="more">받아쓰기 · 설명 · 댓글 <span><svg class="ic" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></span></button>
+        <div class="accb"><div id="dTabs"></div><div id="dBody"></div></div>
         <div class="sec"><label class="memo"><small>내 메모</small><textarea id="dMemo" rows="2"></textarea></label></div>`;
       $('#dMemo').value = it.memo || '';
       autoGrow($('#dMemo'));
@@ -419,8 +424,10 @@
       <div class="tags">${(it.tags || []).map(t => `<button class="tg" data-tag="${esc(t)}">#${esc(t)}</button>`).join('')}
       <button class="add" id="dAddTag" aria-label="태그 추가"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>`;
     renderAi(it);
+    renderTips(it);
     renderCaps(it);
     renderTabs(it);
+    syncAcc();
     $('#aSave').disabled = !it.video;
   }
 
@@ -444,14 +451,11 @@
     const sugg = ai.folder && ai.folder.trim() && fPath(it.folder) !== ai.folder.trim() ? ai.folder.trim() : '';
     if (sum.length || sugg) h += `<div class="sec"><div class="sh"><b>요약</b><button class="ai" data-airedo aria-label="다시 정리">AI ↻</button></div>
       ${ai.log ? `<button class="runinfo" data-runlog>${fmtMs(ai.log.total)} · ${esc(mLabel(ai.model))}${(ai.log.why || []).length ? ' · 오래 걸린 이유 ' + ai.log.why.length : ''}<svg class="ic" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button><div class="runlog hide">${logHtml(ai.log)}</div>` : ''}
-      ${sum.length ? `<ul class="sum">${sum.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      ${sum.map((x, i) => `<ul class="sum"><li>${esc(x)}</li></ul>${attHtml(it, 'summary', i)}`).join('')}
       ${sugg ? `<div class="sugg"><div class="t">폴더 추천 <b>${esc(sugg)}</b></div><button data-sugg>옮기기</button></div>` : ''}</div>`;
     const facts = (ai.facts || []).filter(f => f && f.text);
     if (facts.length) h += `<div class="sec"><div class="sh"><b>${ai.video ? '영상에서 뽑은 정보' : '핵심 정보'}</b><span class="ai">AI</span></div>
-      ${facts.map(f => `<button class="ts" ${+f.t >= 0 ? `data-seek="${+f.t}"` : ''}>${+f.t >= 0 ? `<b>${fmtT(f.t)}</b>` : '<b>·</b>'}<span>${esc(f.text)}</span></button>`).join('')}</div>`;
-    const tips = ai.tips || [];
-    if (tips.length) h += `<div class="sec"><div class="sh"><b>댓글 꿀팁</b><span class="ai">AI</span></div>
-      ${tips.map((t, i) => `<div class="tip"><span class="n">${i + 1}</span><div><p>${esc(t.text)}</p><small>${t.from === 'author' ? '작성자 답글' : t.who ? '@' + esc(String(t.who).replace(/^@/, '')) : '댓글'}</small></div></div>`).join('')}</div>`;
+      ${(ai.facts || []).map((f, i) => !f || !f.text ? '' : `<button class="ts" ${+f.t >= 0 ? `data-seek="${+f.t}"` : ''}>${+f.t >= 0 ? `<b>${fmtT(f.t)}</b>` : '<b>·</b>'}<span>${esc(f.text)}</span></button>${attHtml(it, 'facts', i)}`).join('')}</div>`;
     const ck = it.checks || {};
     const rec = ai.kind === 'recipe' && ai.recipe ? ai.recipe : null;
     if (rec && (rec.ingredients || []).length) h += `<div class="sec"><div class="sh"><b>재료</b><span class="ai">AI</span></div>
@@ -461,6 +465,27 @@
       ${ai.checklist.map((x, i) => `<button class="chk${(ck.c || []).includes(i) ? ' on' : ''}" data-chk="c:${i}"><i></i><span>${esc(x)}</span></button>`).join('')}</div>`;
     if (it.aiError) h += `<div class="sec"><div class="cmtx"><div class="why">다시 정리 실패: ${esc(String(it.aiError).split('\n')[0])}</div></div></div>`;
     el.innerHTML = h;
+  }
+
+  // 접기 · 펼치기 (상세를 열 때마다 접힌 상태로 시작)
+  let accOpen = {};
+  function syncAcc() { document.querySelectorAll('#dScroll [data-acc]').forEach(b => b.classList.toggle('open', !!accOpen[b.dataset.acc])); }
+  function accHead(key, title, count) {
+    return `<button class="acc" data-acc="${key}">${esc(title)} <span>${count != null ? count : ''}<svg class="ic" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></span></button>`;
+  }
+  /** 이 줄에 붙은 캡처들 */
+  function attHtml(it, sec, i) {
+    const cs = (it.captures || []).filter(c => c.at && c.at.sec === sec && +c.at.i === i);
+    if (!cs.length) return '';
+    return `<div class="att">${cs.map(c => `<button class="shot" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}</button>`).join('')}</div>`;
+  }
+  function renderTips(it) {
+    const el = $('#dTips'); if (!el) return;
+    const tips = (it.ai && it.ai.tips) || [];
+    if (!tips.length) { el.innerHTML = ''; return; }
+    const src = t => t.from === 'video' && +t.t >= 0 ? `<button data-seek="${+t.t}">영상 ${fmtT(t.t)}</button>` : t.from === 'video' ? '영상' : t.from === 'author' ? '작성자 답글' : t.who ? '@' + esc(String(t.who).replace(/^@/, '')) : '댓글';
+    el.innerHTML = accHead('tips', '영상 · 댓글 꿀팁', tips.length) + `<div class="accb"><div class="sec">
+      ${tips.map((t, i) => `<div class="tip"><span class="n">${i + 1}</span><div><p>${esc(t.text)}</p><small>${src(t)}</small></div></div>`).join('')}</div></div>`;
   }
 
   const mLabel = m => ({ 'gemini-flash-latest': '최신 flash', 'gemini-2.5-flash': '2.5 flash', 'gemini-flash-lite-latest': 'flash-lite' }[m] || m || '');
@@ -493,10 +518,11 @@
     const caps = it.captures || [];
     const el = $('#dCaps');
     if (!it.video && caps.length === 0) { el.innerHTML = ''; return; }
-    el.innerHTML = `<div class="sec"><div class="sh"><b>캡처 ${caps.length}</b></div><div class="shots">
-      ${caps.map(c => `<button class="shot" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><span class="tc">${fmtT(c.t)}</span></button>`).join('')}
+    el.innerHTML = accHead('caps', '캡처', caps.length) + `<div class="accb"><div class="sec"><div class="shots">
+      ${caps.map(c => `<button class="shot" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}</button>`).join('')}
       ${it.video ? '<button class="shot plus" id="dCapAdd" aria-label="지금 장면 캡처"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>' : ''}
-    </div></div>`;
+    </div></div></div>`;
+    syncAcc();
   }
 
   function renderTabs(it) {
@@ -549,9 +575,114 @@
     c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
     c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
     const f = $('#dFlash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
-    const r = A.capture(cur, v.currentTime, c.toDataURL('image/jpeg', .9));
-    if (r) { replace(JSON.parse(r)); renderCaps(byId(cur)); }
-    toast('캡처했어요 ' + fmtT(v.currentTime));
+    v.pause();
+    openCrop(c.toDataURL('image/jpeg', .92), v.currentTime);
+  }
+
+  // ── 잘라쓰기 ──
+  let cropT = 0, cropSrc = '', cb = null;
+  function openCrop(data, t) {
+    cropT = t; cropSrc = data;
+    $('#cropTitle').textContent = fmtT(t) + ' 잘라쓰기';
+    const img = $('#cropImg');
+    img.onload = () => requestAnimationFrame(() => {
+      const r = img.getBoundingClientRect(), w = $('#cropWrap').getBoundingClientRect();
+      cb = { x: r.left - w.left, y: r.top - w.top, w: r.width, h: r.height, ix: r.left - w.left, iy: r.top - w.top, iw: r.width, ih: r.height };
+      const m = Math.min(r.width, r.height) * .12; cb.x += m; cb.y += m; cb.w -= 2 * m; cb.h -= 2 * m;
+      drawBox();
+    });
+    img.src = data;
+    openPage('crop');
+  }
+  function drawBox() { const b = $('#cropBox').style; b.left = cb.x + 'px'; b.top = cb.y + 'px'; b.width = cb.w + 'px'; b.height = cb.h + 'px'; }
+  (function cropDrag() {
+    let d = null;
+    $('#cropWrap').addEventListener('pointerdown', e => {
+      if (!cb) return;
+      const hd = e.target.closest('[data-h]'); const inBox = e.target.closest('#cropBox');
+      if (!hd && !inBox) return;
+      d = { h: hd ? hd.dataset.h : 'move', x0: e.clientX, y0: e.clientY, b: Object.assign({}, cb) };
+      e.target.setPointerCapture(e.pointerId); e.preventDefault();
+    });
+    $('#cropWrap').addEventListener('pointermove', e => {
+      if (!d) return;
+      const dx = e.clientX - d.x0, dy = e.clientY - d.y0, b = d.b, MIN = 40;
+      let { x, y, w, h } = b;
+      if (d.h === 'move') { x += dx; y += dy; }
+      if (d.h.includes('l')) { x = Math.min(b.x + dx, b.x + b.w - MIN); w = b.x + b.w - x; }
+      if (d.h.includes('r')) { w = Math.max(MIN, b.w + dx); }
+      if (d.h.includes('t')) { y = Math.min(b.y + dy, b.y + b.h - MIN); h = b.y + b.h - y; }
+      if (d.h.includes('b') && d.h !== 'move') { h = Math.max(MIN, b.h + dy); }
+      // 그림 밖으로 못 나가게
+      x = Math.max(cb.ix, Math.min(x, cb.ix + cb.iw - w)); y = Math.max(cb.iy, Math.min(y, cb.iy + cb.ih - h));
+      w = Math.min(w, cb.ix + cb.iw - x); h = Math.min(h, cb.iy + cb.ih - y);
+      Object.assign(cb, { x, y, w, h }); drawBox();
+    });
+    const end = () => { d = null; };
+    $('#cropWrap').addEventListener('pointerup', end); $('#cropWrap').addEventListener('pointercancel', end);
+  })();
+  function cropResult(full) {
+    const img = $('#cropImg');
+    if (full || !cb) return cropSrc;
+    const sx = img.naturalWidth / cb.iw, sy = img.naturalHeight / cb.ih;
+    const c = document.createElement('canvas');
+    c.width = Math.round(cb.w * sx); c.height = Math.round(cb.h * sy);
+    c.getContext('2d').drawImage(img, (cb.x - cb.ix) * sx, (cb.y - cb.iy) * sy, c.width, c.height, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', .92);
+  }
+
+  // ── 붙일 곳 고르기 (새 캡처 · 옮기기 같이 씀) ──
+  let attMode = null, attSel = '';
+  function openAttach(mode) {
+    attMode = mode;
+    const it = byId(cur); const ai = it.ai || {};
+    const t = mode.t != null ? mode.t : -1;
+    // 시간이 가장 가까운 정보 줄을 미리 고름 (10초 안)
+    let best = '', bd = 11;
+    (ai.facts || []).forEach((f, i) => { if (+f.t >= 0 && t >= 0 && Math.abs(f.t - t) < bd) { bd = Math.abs(f.t - t); best = 'facts:' + i; } });
+    attSel = mode.cur != null ? mode.cur : best;
+    const row = (k, label) => `<button class="rad${attSel === k ? ' on' : ''}" data-att="${k}"><i></i><span>${esc(label)}</span></button>`;
+    let h = '';
+    if ((ai.summary || []).length) h += '<div class="agrp">요약</div>' + ai.summary.map((x, i) => row('summary:' + i, x)).join('');
+    if ((ai.facts || []).length) h += `<div class="agrp">${ai.video ? '영상에서 뽑은 정보' : '핵심 정보'}</div>` + ai.facts.map((f, i) => row('facts:' + i, (+f.t >= 0 ? fmtT(f.t) + ' ' : '') + f.text)).join('');
+    h += '<div class="agrp">그 밖</div>' + row('', '캡처 칸에만 두기');
+    $('#attList').innerHTML = h;
+    $('#attImg').src = mode.img || '';
+    $('#attInfo').textContent = mode.info || '';
+    openSheet('attSheet');
+  }
+  function attValue(k) { if (!k) return ''; const [sec, i] = k.split(':'); return JSON.stringify({ sec, i: +i }); }
+  function doAttach() {
+    const m = attMode; if (!m) return;
+    closeSheet('attSheet');
+    const at = attValue(attSel);
+    if (m.kind === 'new') {
+      const r = A.capture(cur, m.t, m.data, at);
+      if (r) { replace(JSON.parse(r)); }
+      closePage('crop');
+      toast(at ? '요약에 붙였어요' : '캡처 칸에 넣었어요');
+    } else {
+      const it = byId(cur);
+      (it.captures || []).forEach(c => { if (m.ids.includes(c.id)) { if (at) c.at = JSON.parse(at); else delete c.at; } });
+      A.update(cur, JSON.stringify({ captures: it.captures }));
+      toast(m.ids.length + '개를 옮겼어요');
+      if ($('#capsel').classList.contains('open')) closePage('capsel');
+    }
+    renderDetail(false);
+    if (curCap) renderCap();
+  }
+
+  // ── 캡처 고르기 ──
+  const capSel = new Set();
+  function openCapSel(firstId) {
+    capSel.clear(); if (firstId) capSel.add(firstId);
+    renderCapSel(); openPage('capsel');
+  }
+  function renderCapSel() {
+    const it = byId(cur); const caps = it.captures || [];
+    $('#csGrid').innerHTML = caps.map(c => `<button class="shot${capSel.has(c.id) ? ' picked' : ''}" data-csel="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}<span class="ck2"></span></button>`).join('');
+    $('#csCount').textContent = capSel.size + '개 선택';
+    $('#csMove').disabled = $('#csDel').disabled = capSel.size === 0;
   }
 
   function itemText(it) {
@@ -563,7 +694,7 @@
     if (it.memo) L.push('', '── 내 메모 ──', it.memo);
     if (it.ai && (it.ai.summary || []).length) L.push('', '── 요약 ──', ...it.ai.summary.map(x => '· ' + x));
     if (it.ai && (it.ai.facts || []).length) L.push('', '── 핵심 정보 ──', ...it.ai.facts.map(x => (+x.t >= 0 ? '[' + fmtT(x.t) + '] ' : '· ') + x.text));
-    if (it.ai && (it.ai.tips || []).length) L.push('', '── 댓글 꿀팁 ──', ...it.ai.tips.map((x, i) => (i + 1) + '. ' + x.text));
+    if (it.ai && (it.ai.tips || []).length) L.push('', '── 영상 · 댓글 꿀팁 ──', ...it.ai.tips.map((x, i) => (i + 1) + '. ' + x.text + (x.from === 'video' && +x.t >= 0 ? ' (영상 ' + fmtT(x.t) + ')' : x.from === 'author' ? ' (작성자)' : '')));
     if (it.ai && it.ai.recipe && (it.ai.recipe.ingredients || []).length) L.push('', '── 재료 ──', ...it.ai.recipe.ingredients.map(x => '· ' + x), '', '── 순서 ──', ...(it.ai.recipe.steps || []).map((x, i) => (i + 1) + '. ' + x));
     if (it.ai && (it.ai.checklist || []).length) L.push('', '── 체크리스트 ──', ...it.ai.checklist.map(x => '□ ' + x));
     if (it.desc) L.push('', '── 설명 ──', it.desc);
@@ -590,10 +721,14 @@
       sc.dataset.cap = c.id;
       sc.innerHTML = `<div class="capimg"><img src="${fileUrl(it.id, c.file)}" alt=""></div>
         <div class="sec"><div class="ocr" id="cOcr"></div>
-        <label class="memo" style="margin-top:8px"><small>메모</small><textarea id="cMemo" rows="1"></textarea></label></div>`;
+        <label class="memo" style="margin-top:8px"><small>메모</small><textarea id="cMemo" rows="1"></textarea></label>
+        <div class="capat" id="cAt"></div></div>`;
       $('#cMemo').value = c.memo || ''; autoGrow($('#cMemo'));
     }
     $('#cOcr').innerHTML = `<small>화면 글자</small>${c.ocr === 'busy' ? '읽는 중…' : (c.text ? esc(c.text) : '글자가 없어요')}`;
+    const ai = it.ai || {};
+    const where = c.at ? (c.at.sec === 'summary' ? '요약: ' + ((ai.summary || [])[c.at.i] || '') : '정보: ' + (((ai.facts || [])[c.at.i] || {}).text || '')) : '캡처 칸에만';
+    $('#cAt').innerHTML = `<span>붙인 곳 <b>${esc(where)}</b></span><button class="chip" data-capmove>바꾸기</button>`;
   }
   function saveCapMemo() {
     const it = byId(cur); const c = it && (it.captures || []).find(x => x.id === curCap); if (!c) return;
@@ -786,7 +921,11 @@
       more.previousElementSibling.textContent = full; more.remove(); return;
     }
     if (t.closest('#dCap') || t.closest('#dCapAdd')) return capture();
+    const acc = t.closest('[data-acc]'); if (acc) { const k = acc.dataset.acc; accOpen[k] = !accOpen[k]; syncAcc(); return; }
+    const cs = t.closest('[data-csel]'); if (cs) { const id = cs.dataset.csel; if (capSel.has(id)) capSel.delete(id); else capSel.add(id); renderCapSel(); return; }
     const shot = t.closest('[data-cap]'); if (shot) return openCap(shot.dataset.cap);
+    const ar = t.closest('[data-att]'); if (ar) { attSel = ar.dataset.att; document.querySelectorAll('#attList .rad').forEach(b => b.classList.toggle('on', b === ar)); return; }
+    if (t.closest('[data-capmove]')) { const it = byId(cur); const c = it.captures.find(x => x.id === curCap); return openAttach({ kind: 'move', ids: [curCap], t: c.t, img: fileUrl(it.id, c.file), info: fmtT(c.t) + ' 캡처', cur: c.at ? c.at.sec + ':' + c.at.i : '' }); }
     if (t.closest('#dAddTag')) return ask('태그 추가', '태그', v => {
       const it = byId(cur); v = v.replace(/^#/, '').trim(); if (!v) return;
       it.tags = it.tags || []; if (!it.tags.includes(v)) it.tags.push(v);
@@ -856,6 +995,15 @@
     const id = cur; closePage('detail'); A.remove(id); items = items.filter(x => x.id !== id); meta.order = meta.order.filter(x => x !== id); saveMeta(); renderHome();
   });
 
+  $('#cropFull').onclick = () => openAttach({ kind: 'new', data: cropResult(true), t: cropT, img: cropSrc, info: fmtT(cropT) + ' · 전체' });
+  $('#cropOk').onclick = () => { const d = cropResult(false); openAttach({ kind: 'new', data: d, t: cropT, img: d, info: fmtT(cropT) + ' · 잘라낸 부분' }); };
+  $('#attGo').onclick = doAttach;
+  $('#csAll').onclick = () => { const caps = byId(cur).captures || []; if (capSel.size === caps.length) capSel.clear(); else caps.forEach(c => capSel.add(c.id)); renderCapSel(); };
+  $('#csDel').onclick = () => confirmAsk(capSel.size + '개 캡처를 지울까요?', '지우기', () => {
+    const r = A.removeCaptures(cur, JSON.stringify([...capSel])); if (r) replace(JSON.parse(r));
+    closePage('capsel'); renderDetail(false); toast('지웠어요');
+  });
+  $('#csMove').onclick = () => { const it = byId(cur); const first = it.captures.find(c => capSel.has(c.id)); openAttach({ kind: 'move', ids: [...capSel], t: first ? first.t : -1, img: first ? fileUrl(it.id, first.file) : '', info: capSel.size + '개 캡처' }); };
   $('#cGallery').onclick = () => { const it = byId(cur); const c = it && it.captures.find(x => x.id === curCap); if (c) A.exportFile(it.id, c.file); };
   $('#cPlay').onclick = () => {
     const it = byId(cur); const c = it && it.captures.find(x => x.id === curCap); if (!c) return;
@@ -868,6 +1016,7 @@
   });
 
   load();
+  if (!window.Android) window.__dev = { openCrop };
 
   // ── 컴퓨터에서 화면만 볼 때 쓰는 가짜 브리지 ──
   function devBridge() {
@@ -878,7 +1027,7 @@
           tips: [{ text: '6시 전에 가야 웨이팅 없음', from: 'author', who: 'yytable' }], video: true, facts: [{ t: 5, text: 'Lai Seafood 랍스터 1kg 120만동' }, { t: -1, text: '화요일 휴무: Ớt Hiểm' }], model: 'gemini-2.5-flash',
           log: { total: 112000, rows: [{ step: '영상 올리기', ms: 8200, note: '12.3MB', ok: true }, { step: '영상 처리 대기', ms: 14000, note: '확인 7번', ok: true }, { step: '최신 flash #1', ms: 1200, note: '503 구글 서버가 바빠요(모델 혼잡) → 잠시 뒤 또는 다른 모델', ok: false }, { step: '2.5 flash #1', ms: 88000, note: '성공', ok: true }],
             usage: { totalTokenCount: 21000, promptTokenCount: 18000, videoTokens: 15000, thoughtsTokenCount: 2400, candidatesTokenCount: 600 }, why: ['실패 1번 → 다시 시도 · 다른 모델로 넘어감', 'AI가 답하기 전에 오래 생각함 (생각 2400 · 답 600 토큰)', '영상이 길어서 볼 양이 많음 (영상 15000 토큰)'] }, transcript: [{ t: 0, text: '오늘은 나트랑 3일차' }, { t: 12, text: '콩카페 먼저 가요' }] }, title: '나트랑 시내 맛집 4곳 추천', author: 'yytable', desc: '나트랑 시내에서 현지인이 많이 가는 식당 4곳!\n1. Lai Seafood\n2. Ớt Hiểm Thai Cuisine', duration: 48, w: 720, h: 1280, memo: '12월 여행 때 저녁', tags: ['여행'], createdAt: now,
-        comments: [{ a: 'traveler_kim', t: '저녁 6시 전에 가야 웨이팅 없어요', l: 312, r: [{ a: 'yytable', t: '맞아요! 6시 넘으면 30분 넘게 기다려요', l: 20, own: true }] }, { a: 'minji', t: '저장해둡니다', l: 54 }], captures: [] },
+        captures: [{ id: 'k1', t: 5, file: 'x.jpg', text: '랍스터 1kg', memo: '가격표', ai: true, at: { sec: 'summary', i: 0 } }, { id: 'k2', t: 12, file: 'y.jpg', text: '', memo: '', at: { sec: 'facts', i: 0 } }, { id: 'k3', t: 20, file: 'z.jpg', text: '', memo: '' }], comments: [{ a: 'traveler_kim', t: '저녁 6시 전에 가야 웨이팅 없어요', l: 312, r: [{ a: 'yytable', t: '맞아요! 6시 넘으면 30분 넘게 기다려요', l: 20, own: true }] }, { a: 'minji', t: '저장해둡니다', l: 54 }] },
       { id: 'b', url: 'https://youtube.com/shorts/y', platform: 'youtube', kind: '쇼츠', status: 'done', category: '디자인', title: '피그마 아이콘 파일 50개 이상 무료 배포', author: 'figma.create', desc: '댓글에 icon 남기면 보내드려요', duration: 35, w: 720, h: 1280, tags: ['디자인'], createdAt: now, comments: [], commentError: '[화면] HTTP 403 login_required\n[직접] HTTP 403', captures: [] },
       { id: 'c', url: 'https://brunch.co.kr/z', platform: 'web', kind: '웹', status: 'done', category: '요리', title: '홈카페 라떼아트 기초', author: 'brunch.co.kr', desc: '', body: '우유 온도는 60도가 좋아요.', tags: [], createdAt: now, comments: [], captures: [] },
       { id: 'd', url: 'https://www.instagram.com/reel/z', platform: 'instagram', status: 'saving', stage: '영상 받는 중', progress: 62, createdAt: now },
@@ -890,7 +1039,7 @@
       update: () => '', remove: () => {}, retry: () => {}, capture: () => '', removeCapture: () => '',
       open: () => {}, copy: () => {}, shareText: () => {}, exportFile: () => {},
       settings: () => JSON.stringify({ quality: '720', igLogin: false, used: 1.2e9, tool: '2026.11.01', app: '0.1' }),
-      setQuality: () => {}, refetchComments: () => {}, setGeminiKey: () => {}, setAiOn: () => {}, aiRedo: () => {}, aiCancel: () => {}, batteryUnrestrict: () => {}, setAiSpeed: () => {}, setWatch: () => {}, removeMany: () => {}, updateMany: () => {},
+      setQuality: () => {}, refetchComments: () => {}, setGeminiKey: () => {}, setAiOn: () => {}, aiRedo: () => {}, aiCancel: () => {}, batteryUnrestrict: () => {}, setAiSpeed: () => {}, setWatch: () => {}, removeMany: () => {}, updateMany: () => {}, removeCaptures: () => '',
       meta: () => localStorage.meta || JSON.stringify({ folders: [{ id: 'f1', name: '여행', parent: null }, { id: 'f2', name: '나트랑', parent: 'f1' }, { id: 'f3', name: '디자인', parent: null }], order: [] }),
       setMeta: (j) => { localStorage.meta = j; },
       diag: (u) => { const st = [['링크 종류', 'ok', '인스타 · 게시물 abc'], ['인터넷 연결', 'ok', '응답 200'], ['인스타 로그인', 'ok', '로그인됨'], ['내용 읽기 (yt-dlp)', 'ok', '제목 ✓ · 설명 320자'], ['댓글 가져오기', 'fail', '[화면] HTTP 403']];

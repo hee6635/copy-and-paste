@@ -108,7 +108,7 @@ object Gemini {
             for (i in 0 until rows.length()) { val r = rows.getJSONObject(i); if (!r.optBoolean("ok") && r.optString("note").contains("답이 없어요") && slowRow == null) slowRow = r; if (r.optBoolean("ok") && r.has("t")) okRow = r }
             if (slowRow != null && okRow != null) why += "${slowRow.optString("step").substringBefore(" #")}는 ${slowRow.optLong("ms") / 1000}초 동안 답이 없었고, ${okRow.optString("step").substringBefore(" #")}는 ${okRow.optLong("ms") / 1000}초 만에 답함 → 그 모델만 붐볐어요"
             val vidTok = usage?.optInt("videoTokens") ?: 0
-            if (vidTok > 5000) why += "영상이 길어서 볼 양이 많음 (영상 ${vidTok} 토큰)"
+            if (vidTok > 30000) why += "영상이 길어서 볼 양이 많음 (영상 ${vidTok} 토큰)"
             // 성공한 요청의 시간 나눔으로 "서버 쪽이냐 폰 · 인터넷 쪽이냐"를 가름
             val t = okTiming
             if (t != null && genOk > 20000) {
@@ -239,17 +239,19 @@ object Gemini {
         val sb = StringBuilder()
         sb.append("""너는 사용자가 저장한 SNS 게시물 · 영상 · 웹페이지를 메모로 정리하는 도우미야. 한국어로, 짧고 쉽게.
 규칙:
-- summary: 핵심 1~3줄. 각 줄 40자 안팎. 광고 문구 · 해시태그 · "저장하세요" 같은 말은 빼고 정보만.
+- summary: 핵심 2~4줄. 각 줄 45자 안팎. 코스 · 장소 같은 큰 흐름 + 바로 쓸 실용 팁(가격 · 시간대 · 주의 · 추천)을 영상(말 · 화면 글자) · 설명 · 댓글 · 작성자 답글에서 골라 넣기. 광고 문구 · 해시태그 · "저장하세요" 같은 말은 빼기.
 - tags: 2~5개, # 없이 짧은 명사 (지명 · 음식 · 주제).
 - folder: 아래 "내 폴더" 중 가장 맞는 것의 경로를 그대로 쓰기. 맞는 게 없으면 "큰폴더 › 작은폴더" 또는 "큰폴더" 형식으로 새로 제안. 작은 폴더는 지명이나 구체 주제일 때만.
 - category: 아래 목록 중 딱 하나 (큰 갈래): ${CATEGORIES.joinToString(", ")}
 - kind: 요리법이면 recipe, 할 일 · 준비물 목록이면 checklist, 그 밖은 general.
 - recipe: kind 가 recipe 일 때만. 재료(양 포함)와 순서.
 - checklist: kind 가 checklist 일 때만.
-- tips: 댓글과 작성자 답글에서 실제로 쓸모 있는 정보만 0~5개 (추천 · 주의 · 가격 · 시간 · 위치 등). 인사 · 태그 · 감탄은 빼기. from 은 작성자 답글이면 author, 아니면 comment. who 는 아이디.
+- tips: 영상(말 · 화면 글자) · 댓글 · 작성자 답글에서 실제로 쓸모 있는 정보만 0~6개 (추천 · 주의 · 가격 · 시간 · 위치 등). 인사 · 태그 · 감탄은 빼기. from 은 영상이면 video(그 시각 t 초), 작성자 답글이면 author, 댓글이면 comment(t 는 -1). who 는 아이디(영상이면 빈칸).
 - star: 정보가 있는 댓글의 번호(0부터) 목록.
 """)
         sb.append("- facts: 영상 · 글에서 나온 구체 정보만 0~8개 (가게 · 장소 이름, 가격, 시간, 수치, 방법). 영상에서 나온 것이면 t 에 그 시각(초), 아니면 -1.\n")
+        if (withVideo) sb.append("- keyshots: 캡처해 둘 만한 중요한 장면 3~5개 (메뉴판 · 가격표 · 간판 · 지도 · 완성 요리처럼 정보가 화면에 보이는 순간). t 는 그 시각(초, 화면이 또렷한 순간), why 는 무엇이 보이는지 짧게, sec 는 이 장면이 뒷받침하는 줄이 summary 면 summary · facts 면 facts, idx 는 그 줄 번호(0부터).\n")
+        else sb.append("- keyshots: 빈 목록.\n")
         if (withVideo) sb.append("- transcript: 영상에서 말하는 내용을 시간(초)과 함께 받아쓰기. 화면에 크게 나오는 글자도 [화면] 으로 넣기. 말이 없으면 빈 목록.\n")
         else sb.append("- transcript: 빈 목록.\n")
         sb.append("\n내 폴더: ").append(if (folders.isEmpty()) "(없음)" else folders.joinToString(" / ")).append("\n\n")
@@ -288,7 +290,10 @@ object Gemini {
             "category" to JSONObject().put("type", "STRING").put("enum", JSONArray(CATEGORIES)),
             "recipe" to obj("ingredients" to arr(str()), "steps" to arr(str())),
             "checklist" to arr(str()),
-            "tips" to arr(obj("text" to str(), "from" to str(), "who" to str(), req = listOf("text"))),
+            "tips" to arr(obj("text" to str(), "from" to str(), "who" to str(), "t" to JSONObject().put("type", "NUMBER"), req = listOf("text"))),
+            "keyshots" to arr(obj("t" to JSONObject().put("type", "NUMBER"), "why" to str(),
+                "sec" to JSONObject().put("type", "STRING").put("enum", JSONArray(listOf("summary", "facts"))),
+                "idx" to JSONObject().put("type", "INTEGER"), req = listOf("t", "why"))),
             "star" to arr(JSONObject().put("type", "INTEGER")),
             "transcript" to arr(obj("t" to JSONObject().put("type", "NUMBER"), "text" to str(), req = listOf("t", "text"))),
             "facts" to arr(obj("t" to JSONObject().put("type", "NUMBER"), "text" to str(), req = listOf("t", "text"))),
