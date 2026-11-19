@@ -43,6 +43,9 @@ object Store {
 
     fun all(ctx: Context): String = synchronized(lock) { load(ctx).toString() }
 
+    /** 되살리기 뒤: 다시 읽게 */
+    fun reset() = synchronized(lock) { cache = null }
+
     fun get(ctx: Context, id: String): JSONObject? = synchronized(lock) {
         val arr = load(ctx)
         for (i in 0 until arr.length()) {

@@ -21,7 +21,9 @@ function devBridge() {
     update: () => '', remove: () => {}, retry: () => {}, capture: () => '', removeCapture: () => '',
     open: () => {}, copy: () => {}, shareText: () => {}, exportFile: () => {},
     settings: () => JSON.stringify({ quality: '720', igLogin: false, used: 1.2e9, tool: '2026.11.01', app: '0.1' }),
-    setQuality: () => {}, refetchComments: () => {}, setGeminiKey: () => {}, setAiOn: () => {}, aiRedo: () => {}, aiCancel: () => {}, batteryUnrestrict: () => {}, setAiSpeed: () => {}, setWatch: () => {}, removeMany: () => {}, updateMany: () => {}, removeCaptures: () => '',
+    setQuality: () => {}, refetchComments: () => {}, setGeminiKey: () => {}, setAiOn: () => {}, aiRedo: () => {}, aiCancel: () => {}, batteryUnrestrict: () => {}, setAiSpeed: () => {}, backup: () => {}, restore: () => {},
+      usage: () => JSON.stringify({ today: { 'gemini-flash-lite-latest': { n: 12, tok: 34000 } }, month: { 'gemini-flash-lite-latest': { n: 40, tok: 120000 }, 'gemini-flash-latest': { n: 3, tok: 9000 } }, last429: { at: Date.now(), model: 'gemini-flash-latest', metric: 'generativelanguage.googleapis.com/generate_requests_per_model_per_day', value: '20', retry: '33s' }, reset: '11월 20일 오후 5시' }),
+      ask: (q) => setTimeout(() => App.onAsk(JSON.stringify({ answer: '나트랑은 2개 저장했어요. 청안딤섬은 딤섬 한 판 [[약 3천 원]]이에요.', refs: ['a'] })), 600), setWatch: () => {}, removeMany: () => {}, updateMany: () => {}, removeCaptures: () => '',
     meta: () => localStorage.meta || JSON.stringify({ folders: [{ id: 'f1', name: '여행', parent: null }, { id: 'f2', name: '나트랑', parent: 'f1' }, { id: 'f3', name: '디자인', parent: null }], order: [] }),
     setMeta: (j) => { localStorage.meta = j; },
     diag: (u) => { const st = [['링크 종류', 'ok', '인스타 · 게시물 abc'], ['인터넷 연결', 'ok', '응답 200'], ['인스타 로그인', 'ok', '로그인됨'], ['내용 읽기 (yt-dlp)', 'ok', '제목 ✓ · 설명 320자'], ['댓글 가져오기', 'fail', '[화면] HTTP 403']];

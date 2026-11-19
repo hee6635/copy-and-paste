@@ -32,6 +32,7 @@ function renderDetail(full) {
   sc.querySelector('.meta').innerHTML = `<div class="s">${esc(PLAT[it.platform] || '')}${it.author ? ' · ' + esc(it.author) : ''} · ${fmtD(it.createdAt)}</div>
     <h2>${esc(it.title || it.url)}</h2>
     <button class="fchip" id="dFolder"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>${esc(fPath(it.folder) || '폴더 없음')}<svg class="ic chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
+    <button class="fchip" id="dCat">${esc(it.category ? catLabel(it.category) : '키워드 없음')}<svg class="ic chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
     <div class="tags">${(it.tags || []).map(t => `<button class="tg" data-tag="${esc(t)}">#${esc(t)}</button>`).join('')}
     <button class="add" id="dAddTag" aria-label="태그 추가"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>`;
   renderAi(it);

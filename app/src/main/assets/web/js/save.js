@@ -31,4 +31,4 @@ function doSave() {
   $('#home').scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function pasteState() { $('#pasteGo').classList.toggle('on', !!findUrl($('#paste').value)); }
+function pasteState() { const v = $('#paste').value; $('#pasteGo').classList.toggle('on', dockMode === 'ask' ? !!v.trim() : !!findUrl(v)); }

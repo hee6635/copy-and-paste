@@ -169,8 +169,10 @@ object Diag {
         if (key.isEmpty()) skip("AI · 키", "API 키가 없어요 → 설정 › Gemini API 키")
         else {
             step("AI · 키 모양") { s ->
-                Gemini.keyShape(key)?.let { throw IllegalStateException(it) }
-                s.msg = "AIza…${key.takeLast(4)} · ${key.length}자"
+                // 새로 발급되는 키는 모양이 다를 수 있어서 경고만 (진짜 확인은 아래 "키 확인")
+                val w = Gemini.keyShape(key)
+                if (w != null) { s.state = "warn"; s.msg = "$w · 아래 키 확인이 ✓ 면 괜찮아요" }
+                else s.msg = "AIza…${key.takeLast(4)} · ${key.length}자"
             }
             step("AI · 폰 인터넷") { s ->
                 val cm = ctx.getSystemService(android.net.ConnectivityManager::class.java)

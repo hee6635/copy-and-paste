@@ -453,3 +453,41 @@ body.selecting .card .ck{display:flex}
 .orig{margin-top:10px}
 .orig summary{font-size:13.5px;font-weight:600;color:var(--sub);cursor:pointer;height:32px;display:flex;align-items:center}
 .tip3 .stx{padding:0;font-size:14.5px;font-weight:400;letter-spacing:0}
+
+/* 홈: 저장 / 질문 */
+.seg2{display:inline-flex;background:var(--line);border-radius:18px;padding:3px;margin:0 0 8px 4px}
+.seg2 button{height:30px;padding:0 14px;border-radius:15px;font-size:13px;font-weight:600;color:var(--sub);transition:background .25s,color .25s}
+.seg2 button.on{background:var(--bg);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+/* 질문하기 */
+#askLog{padding:8px 16px calc(110px + var(--sb))}
+.askex{display:flex;flex-wrap:wrap;gap:8px;padding:20px 0}
+.qb{margin:14px 0 0 50px;background:var(--fg);color:var(--bg);padding:11px 15px;border-radius:20px 20px 6px 20px;font-size:15px;line-height:1.5;width:fit-content;max-width:calc(100% - 50px);margin-left:auto;animation:cardup .35s var(--ease)}
+.ab2{margin:10px 30px 0 0;background:var(--bg);border-radius:20px 20px 20px 6px;padding:14px 16px;animation:cardup .4s var(--ease)}
+.arow{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line);width:100%;text-align:left;margin-top:8px}
+.arow .at{width:42px;height:52px;border-radius:8px;overflow:hidden;background:var(--surface);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.arow .at img{width:100%;height:100%;object-fit:cover}
+.arow b{display:block;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arow .ab{min-width:0}.arow span{font-size:12.5px;color:var(--muted)}
+/* 슬라이드 */
+.sltrack{flex:1;display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none}
+.sltrack::-webkit-scrollbar{display:none}
+.slide{flex:0 0 100%;scroll-snap-align:center;display:flex;flex-direction:column;padding:0 16px;box-sizing:border-box}
+.slm{flex:1;border-radius:22px;overflow:hidden;background:#000;position:relative;min-height:0}
+.slm video,.slm img{width:100%;height:100%;object-fit:cover;display:block}
+.slm .tc{position:absolute;left:12px;top:12px;background:rgba(0,0,0,.55);color:#fff;font-size:12px;font-weight:700;padding:3px 8px;border-radius:8px}
+.slnone{width:100%;height:100%;background:#1e2126}
+.sltx{padding:16px 6px 8px;color:#fff}
+.sltx b{display:block;font-size:20px;font-weight:800;margin-bottom:4px}
+.sltx p{margin:0;font-size:16px;line-height:1.55}
+.sltx small{display:block;color:#8b95a1;font-size:12.5px;margin-top:8px}
+.sltx .chip2{color:#191f28}
+.sldots{display:flex;gap:6px;justify-content:center;padding:6px 0 calc(18px + var(--sb))}
+.sldots i{width:7px;height:7px;border-radius:4px;background:#4e5968;transition:width .3s var(--ease),background .3s}
+.sldots i.on{width:20px;background:#fff}
+.slbtn{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 10px;border-radius:14px;background:var(--fg);color:var(--bg);font-size:12.5px;font-weight:700;margin-left:auto;margin-right:6px}
+/* 사용량 */
+.ust{display:grid;grid-template-columns:1fr auto auto;gap:6px 14px;font-size:14px;padding:4px 0}
+.ust b{font-weight:700}.ust span{text-align:right;font-variant-numeric:tabular-nums;color:var(--sub)}
+.ush{font-size:12.5px;color:var(--muted);font-weight:700}
+.ust2{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px}
+.ust2 b{font-weight:700;white-space:nowrap}.ust2 span{text-align:right;color:var(--sub);word-break:break-all}

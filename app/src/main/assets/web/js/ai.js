@@ -19,7 +19,7 @@ function renderAi(it) {
   const ck = it.checks || {};
   const rec = ai.kind === 'recipe' && ai.recipe && ((ai.recipe.ingredients || []).length || (ai.recipe.steps || []).length) ? ai.recipe : null;
   const runinfo = ai.log ? `<button class="runinfo" data-runlog>${fmtMs(ai.log.total)} · ${esc(mLabel(ai.model))}${(ai.log.why || []).length ? ' · 오래 걸린 이유 ' + ai.log.why.length : ''}<svg class="ic" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button><div class="runlog hide">${logHtml(ai.log)}</div>` : '';
-  const redo = '<button class="ai" data-airedo aria-label="다시 정리">AI ↻</button>';
+  const redo = (canSlide(it) ? '<button class="slbtn" data-slides>▶ 슬라이드</button>' : '') + '<button class="ai" data-airedo aria-label="다시 정리">AI ↻</button>';
   const suggHtml = sugg ? `<div class="sugg"><div class="t">폴더 추천 <b>${esc(sugg)}</b></div><button data-sugg>옮기기</button></div>` : '';
   const tipsTitle = places.length || rec ? '꼭 알아둘 팁' : '요약';
   if (places.length) {

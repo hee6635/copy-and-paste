@@ -21,14 +21,44 @@ const CAT_IC = {
   '생활팁': '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/>',
   '기타': '<circle cx="6" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="18" cy="12" r="1.5"/>',
 };
+/* 큰 키워드: AI 갈래 + 내 키워드("q:낱말"). meta.cats = { hidden:[], order:[], names:{}, custom:[] } */
+const ALL_CATS = ['여행', '맛집', '요리', '쇼핑', '디자인', '개발·IT', '공부', '운동·건강', '영화·책', '게임', '음악', '생활팁', '기타'];
+function catsMeta() { meta.cats = meta.cats || {}; const c = meta.cats; c.hidden = c.hidden || []; c.order = c.order || []; c.names = c.names || {}; c.custom = c.custom || []; return c; }
+const catLabel = k => k.startsWith('q:') ? k.slice(2) : (catsMeta().names[k] || k);
+function hayOf(it) {
+  const ai = it.ai || {};
+  return [it.title, it.author, it.desc, it.body, it.memo, (it.tags || []).join(' '), (ai.summary || []).join(' '),
+    (ai.places || []).map(p => p.name + ' ' + p.info).join(' '), (ai.transcript || []).map(x => x.text + ' ' + (x.ko || '')).join(' ')].join(' ').toLowerCase();
+}
+function inCat(it, k) { return k.startsWith('q:') ? hayOf(it).includes(k.slice(2).toLowerCase()) : it.category === k; }
 function renderCats() {
+  const cm = catsMeta();
   const n = {};
-  items.forEach(it => { if (it.status === 'done' && it.category && inFilter(it)) n[it.category] = (n[it.category] || 0) + 1; });
-  let list = Object.keys(n).sort((a, b) => n[b] - n[a]).slice(0, 8);
+  const base = items.filter(it => it.status === 'done' && inFilter(it));
+  base.forEach(it => { if (it.category) n[it.category] = (n[it.category] || 0) + 1; });
+  cm.custom.forEach(w => { n['q:' + w] = base.filter(it => inCat(it, 'q:' + w)).length; });
+  const keys = Object.keys(n).filter(k => !cm.hidden.includes(k) && (n[k] > 0 || k.startsWith('q:')));
+  const pos = k => { const i = cm.order.indexOf(k); return i < 0 ? 999 : i; };
+  let list = keys.sort((a, b) => pos(a) - pos(b) || n[b] - n[a]).slice(0, 8);
   if (cat && !list.includes(cat)) list = list.slice(0, 7).concat(cat);
   const el = $('#cats');
   el.classList.toggle('hide', list.length === 0);
-  el.innerHTML = list.map(c => `<button class="kt${c === cat ? ' on' : ''}" data-cat="${esc(c)}"><svg class="ic" viewBox="0 0 24 24">${CAT_IC[c] || CAT_IC['기타']}</svg><b>${esc(c)}</b><small>${n[c] || 0}</small></button>`).join('');
+  el.innerHTML = list.map(c => `<button class="kt${c === cat ? ' on' : ''}" data-cat="${esc(c)}"><svg class="ic" viewBox="0 0 24 24">${c.startsWith('q:') ? '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/>' : (CAT_IC[c] || CAT_IC['기타'])}</svg><b>${esc(catLabel(c))}</b><small>${n[c] || 0}</small></button>`).join('');
+}
+/** 키워드 꾹: 이름 바꾸기 · 앞으로 · 뒤로 · 숨기기(지우기) · 내 키워드 추가 · 숨긴 것 보이기 */
+function catOptions(k) {
+  const cm = catsMeta();
+  const shown = [...document.querySelectorAll('#cats [data-cat]')].map(b => b.dataset.cat);
+  const move = d => { const o = shown.slice(); const i = o.indexOf(k); const j = i + d; if (i < 0 || j < 0 || j >= o.length) return; o.splice(i, 1); o.splice(j, 0, k); cm.order = o; saveMeta(); renderCats(); };
+  const rows = [
+    ['이름 바꾸기', () => ask('키워드 이름', '이름', v => { v = v.trim(); if (!v) return; if (k.startsWith('q:')) { const i = cm.custom.indexOf(k.slice(2)); if (i >= 0) cm.custom[i] = v; if (cat === k) cat = 'q:' + v; } else cm.names[k] = v; saveMeta(); renderHome(); }, catLabel(k))],
+    ['앞으로', () => move(-1)], ['뒤로', () => move(1)],
+    ['내 키워드 추가', () => ask('내 키워드', '찾을 낱말 (예: 나트랑)', v => { v = v.trim(); if (!v || cm.custom.includes(v)) return; cm.custom.push(v); saveMeta(); renderHome(); })],
+  ];
+  if (cm.hidden.length) rows.push(['숨긴 키워드 다시 보이기 (' + cm.hidden.length + ')', () => { cm.hidden = []; saveMeta(); renderHome(); }]);
+  rows.push(k.startsWith('q:') ? ['지우기', () => { cm.custom = cm.custom.filter(w => 'q:' + w !== k); if (cat === k) cat = ''; saveMeta(); renderHome(); }, 'danger']
+    : ['숨기기', () => { cm.hidden.push(k); if (cat === k) cat = ''; saveMeta(); renderHome(); }, 'danger']);
+  optSheet(catLabel(k), rows);
 }
 const sel = new Set();
 
@@ -53,7 +83,7 @@ function inFilter(it) {
 
 function matches(it) {
   if (!inFilter(it)) return false;
-  if (cat && it.category !== cat) return false;
+  if (cat && !inCat(it, cat)) return false;
   if (!query) return true;
   const q = query.toLowerCase();
   const ai = it.ai || {};
@@ -155,7 +185,9 @@ let lpT = 0, lpX = 0, lpY = 0, lpFired = false;
 document.addEventListener('pointerdown', e => {
   const c = e.target.closest('.card'); const ch = e.target.closest('[data-ft],[data-fs]');
   const cp = e.target.closest('#dScroll [data-cap]');
+  const kc = e.target.closest('#cats [data-cat]');
   lpFired = false;
+  if (kc) { lpX = e.clientX; lpY = e.clientY; clearTimeout(lpT); lpT = setTimeout(() => { lpFired = true; catOptions(kc.dataset.cat); }, 450); return; }
   if (cp) { lpX = e.clientX; lpY = e.clientY; clearTimeout(lpT); lpT = setTimeout(() => { lpFired = true; openCapSel(cp.dataset.cap); }, 450); return; }
   if (!c && !(ch && (ch.dataset.ft || ch.dataset.fs))) return;
   lpX = e.clientX; lpY = e.clientY;

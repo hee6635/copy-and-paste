@@ -49,6 +49,7 @@ object Gemini {
     }
 
     class HttpErr(val code: Int, msg: String) : IllegalStateException(msg)
+    @Volatile var lastErrRaw = ""
     /** 실패해도 기록(log)은 남김 */
     class AiFail(msg: String, val log: JSONObject) : IllegalStateException(msg)
 
@@ -185,6 +186,7 @@ object Gemini {
         c.getHeaderField("server-timing")?.let { st -> Regex("dur=([0-9.]+)").find(st)?.groupValues?.get(1)?.toDoubleOrNull()?.let { tm.put("server", it.toLong()) } }
         if (code !in 200..299) {
             val msg = try { JSONObject(text).optJSONObject("error")?.optString("message") } catch (_: Exception) { null } ?: text.take(200)
+            lastErrRaw = text
             throw HttpErr(code, when (code) {
                 400 -> if (text.contains("API key not valid") || text.contains("API_KEY_INVALID")) "400 키가 맞지 않아요 → 키를 다시 복사해서 넣기" else "400 요청 오류: $msg"
                 401 -> "401 인증 실패 → 키를 다시 넣기"
@@ -370,6 +372,7 @@ object Gemini {
         count(ctx)
         val res = JSONObject(text)
         val um = res.optJSONObject("usageMetadata")
+        Usage.ok(ctx, used, um?.optInt("totalTokenCount") ?: 0)
         val usage = JSONObject()
         if (um != null) {
             listOf("promptTokenCount", "candidatesTokenCount", "thoughtsTokenCount", "totalTokenCount").forEach { usage.put(it, um.optInt(it)) }
@@ -415,6 +418,7 @@ object Gemini {
         if (code !in 200..299) {
             val text = c.errorStream?.bufferedReader()?.readText() ?: ""
             val msg = try { JSONObject(text).optJSONObject("error")?.optString("message") } catch (_: Exception) { null } ?: text.take(200)
+            lastErrRaw = text
             throw HttpErr(code, when (code) {
                 400 -> if (text.contains("API key not valid") || text.contains("API_KEY_INVALID")) "400 키가 맞지 않아요 → 키를 다시 복사해서 넣기" else "400 요청 오류: $msg"
                 401 -> "401 인증 실패 → 키를 다시 넣기"
@@ -476,6 +480,7 @@ object Gemini {
                 } catch (e: Throwable) {
                     if (cancelled) throw e
                     val why = explain(e)
+                    if (e is HttpErr && e.code == 429) Usage.limit(ctx, model, lastErrRaw)
                     val short = why.substringBefore(" →")
                     log.add("${label(model)} #${attempt + 1}", System.currentTimeMillis() - t0, why + " · " + timingText(last), false, last)
                     tried.append("${label(model)} #${attempt + 1}: $why\n")
@@ -497,6 +502,39 @@ object Gemini {
             }
         }
         throw IllegalStateException("모두 안 됨\n" + tried.toString().trim())
+    }
+
+    // ── 내 저장함에 질문하기 ──
+    /** context: 화면이 만든 메모 목록(JSON 글). 답 = {"answer":"…","refs":["id",…]} */
+    fun ask(ctx: Context, question: String, context: String, history: String): String {
+        val key = key(ctx)
+        if (key.isEmpty()) throw IllegalStateException("Gemini API 키가 없어요 (설정에서 넣어 주세요)")
+        cancelled = false
+        val prompt = """너는 사용자가 저장해 둔 메모들에서 답을 찾아 주는 도우미야. 한국어로 짧고 쉽게.
+규칙:
+- 아래 [내 메모]에 있는 내용으로만 답하기. 없으면 "저장한 것 중에는 없어요"라고 말하고 비슷한 것이 있으면 알려 주기.
+- answer: 2~5줄. 가격 · 시간 · 장소 같은 구체 정보 위주. 숫자 · 시간은 [[ ]] 로 감싸기.
+- refs: 답에 쓴 메모의 id 목록 (많아야 5개, 관련 높은 순).
+[앞선 대화]
+$history
+[내 메모]
+$context
+[질문]
+$question"""
+        fun str() = JSONObject().put("type", "STRING")
+        val schema = JSONObject().put("type", "OBJECT").put("properties", JSONObject()
+            .put("answer", str()).put("refs", JSONObject().put("type", "ARRAY").put("items", str())))
+            .put("required", JSONArray(listOf("answer", "refs")))
+        val req = JSONObject()
+            .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+            .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("responseSchema", schema).put("temperature", 0.2))
+        val (text, used) = generate(ctx, key, req, {}, RunLog(ctx), false, null)
+        count(ctx)
+        val res = JSONObject(text)
+        Usage.ok(ctx, used, res.optJSONObject("usageMetadata")?.optInt("totalTokenCount") ?: 0)
+        val out = res.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")
+            ?: throw IllegalStateException("답이 비어 있어요")
+        return JSONObject(out.trim().removePrefix("```json").removeSuffix("```").trim()).put("model", used).toString()
     }
 
     // ── 검사용 ──

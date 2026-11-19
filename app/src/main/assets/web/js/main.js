@@ -36,6 +36,11 @@ window.App = {
     list.insertBefore(row, after || null);
     typeIn(row.querySelector('span'), '[화면] ' + o.text, 90);
   },
+  onAsk(json) {
+    const r = JSON.parse(json); const h = askHist.find(x => x.pending); if (!h) return;
+    h.pending = false; if (r.error) h.error = r.error; else { h.a = r.answer || ''; h.refs = (r.refs || []).filter(id => byId(id)); }
+    renderAsk();
+  },
   onPartial(id, txt) { if (cur === id && $('#detail').classList.contains('open')) liveUpdate(txt); },
   onDiag(json) {
     const o = JSON.parse(json);
@@ -72,7 +77,19 @@ document.addEventListener('click', e => {
     meta.order = meta.order.filter(id => !ids.includes(id)); saveMeta(); endSelect(); toast(ids.length + '개를 지웠어요');
   });
   if (t.closest('#ordDone')) { saveOrder(); closePage('order'); if (selecting) endSelect(); toast('순서를 바꿨어요'); return; }
+  const dm = t.closest('[data-dm]'); if (dm) return setDockMode(dm.dataset.dm);
+  const ex = t.closest('[data-askex]'); if (ex) return sendAsk(ex.dataset.askex);
+  const arw = t.closest('.arow'); if (arw) return openDetail(arw.dataset.id);
+  if (t.closest('[data-slides]')) return openSlides();
+  if (t.closest('#sUsage')) return openUsage();
+  if (t.closest('#sBackup')) return A.backup(false);
+  if (t.closest('#sBackupV')) return A.backup(true);
+  if (t.closest('#sRestore')) return confirmAsk('백업 파일로 되살릴까요? 지금 메모는 백업 내용으로 바뀌어요', '되살리기', () => A.restore());
   if (t.closest('#dFolder')) return openMove([cur]);
+  if (t.closest('#dCat')) {
+    const it = byId(cur);
+    return optSheet('키워드', ALL_CATS.map(k => [catLabel(k) + (it.category === k ? '  ✓' : ''), () => { it.category = k; A.update(cur, JSON.stringify({ category: k })); renderDetail(false); renderHome(); }]));
+  }
   if (t.closest('[data-sugg]')) { const it = byId(cur); const fid = ensureFolder(it.ai.folder); if (fid) { moveIds = [cur]; moveTo(fid); renderChips(); } return; }
   if (t.closest('[data-aistop]')) { A.aiCancel(); toast('중지하는 중…'); return; }
   const rl = t.closest('[data-runlog]'); if (rl) { rl.nextElementSibling.classList.toggle('hide'); rl.classList.toggle('open'); return; }
@@ -152,7 +169,14 @@ $('#cfNo').onclick = () => closeSheet('confirmSheet');
 $('#cfYes').onclick = () => { closeSheet('confirmSheet'); cfCb && cfCb(); };
 
 $('#paste').addEventListener('input', pasteState);
-$('#pasteGo').onclick = () => { const u = findUrl($('#paste').value); if (u) openSave(u); else toast('링크를 붙여 넣어 주세요'); };
+$('#pasteGo').onclick = () => {
+  if (dockMode === 'ask') { const q = $('#paste').value.trim(); if (!q) return; $('#paste').value = ''; pasteState(); return openAsk(q); }
+  const u = findUrl($('#paste').value); if (u) openSave(u); else toast('링크를 붙여 넣어 주세요');
+};
+$('#askSend').onclick = () => sendAsk($('#askQ').value);
+$('#askQ').addEventListener('keydown', e => { if (e.key === 'Enter') sendAsk($('#askQ').value); });
+$('#askClear').onclick = () => { askHist = []; renderAsk(); };
+$('#slTrack').addEventListener('scroll', () => { clearTimeout(window.__slT); window.__slT = setTimeout(slideActive, 120); });
 $('#paste').addEventListener('keydown', e => { if (e.key === 'Enter') $('#pasteGo').click(); });
 
 $('#q').addEventListener('input', e => { query = e.target.value.trim(); $('#qClear').classList.toggle('hide', !query); renderHome(); });

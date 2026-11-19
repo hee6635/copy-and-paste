@@ -16,6 +16,7 @@ function renderSettings() {
         <div class="seg" id="sSpeed"><i style="width:calc((100% - 6px) / 2);transform:translateX(${s.aiSpeed === 'smart' ? 100 : 0}%)"></i><button data-sp="fast" class="${s.aiSpeed !== 'smart' ? 'on' : ''}">빠르게</button><button data-sp="smart" class="${s.aiSpeed === 'smart' ? 'on' : ''}">꼼꼼하게</button></div></div>
       <div class="row"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span><span class="rt">이번 달 사용</span><span class="rv">${s.aiUsed || 0}회</span></div>
       ${s.batteryOpt ? `<button class="row" id="sBat"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 11v2M7 10v4"/></svg></span><span class="rt">배터리 최적화 끄기</span><span class="rv">뒤에서도 빠르게</span></button>` : ''}
+      <button class="row" id="sUsage"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></span><span class="rt">AI 사용량</span><span class="rv">자세히</span></button>
       <button class="row" id="sAiAll"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></span><span class="rt">저장한 것 AI 정리</span><span class="rv">${aiN}개</span></button>
     </div>
     <div class="group">
@@ -28,6 +29,13 @@ function renderSettings() {
     <div class="group">
       <div class="row"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 14h16"/></svg></span><span class="rt">저장 공간</span><span class="rv">${fmtB(s.used || 0)}</span></div>
       <button class="row" id="sDelVid"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></span><span class="rt">영상만 지우기</span></button>
+    </div>
+    <div class="group">
+    </div>
+    <div class="group">
+      <button class="row" id="sBackup"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span><span class="rt">백업 파일 만들기</span><span class="rv">영상 빼고</span></button>
+      <button class="row" id="sBackupV"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span><span class="rt">백업 파일 만들기</span><span class="rv">영상 포함</span></button>
+      <button class="row" id="sRestore"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></span><span class="rt">백업에서 되살리기</span></button>
     </div>
     <div class="group">
       <button class="row" id="sTool"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></span><span class="rt">영상 도구 업데이트</span><span class="rv">${esc(s.tool || '')}</span></button>
@@ -69,4 +77,24 @@ function diagText() {
   if (diagItem && diagItem.errorDetail) L.push('', '[저장 오류]', diagItem.errorDetail);
   if (diagItem && diagItem.commentError) L.push('', '[댓글 오류]', diagItem.commentError);
   return L.join('\n');
+}
+
+/** AI 사용량: 오늘 · 이번 달(모델별) · 마지막으로 걸린 한도 · 다음 초기화 */
+function openUsage() { renderUsage(); openPage('usagePage'); }
+function renderUsage() {
+  let u = {}; try { u = JSON.parse(A.usage()); } catch (e) {}
+  const tbl = (o, title) => {
+    const ks = Object.keys(o || {}); if (!ks.length) return `<div class="group"><div class="row"><span class="rt">${title}</span><span class="rv">0회</span></div></div>`;
+    const tot = ks.reduce((a, k) => a + (o[k].n || 0), 0);
+    return `<div class="sec"><div class="sh"><b>${title}</b><span class="rv">${tot}회</span></div><div class="ust"><span class="ush" style="text-align:left">모델</span><span class="ush">횟수</span><span class="ush">토큰</span>
+      ${ks.map(k => `<b>${esc(mLabel(k))}</b><span>${o[k].n}</span><span>${(o[k].tok || 0).toLocaleString()}</span>`).join('')}</div></div>`;
+  };
+  const l = u.last429 || {};
+  const lim = l.at ? `<div class="sec"><div class="sh"><b>마지막으로 걸린 한도</b><span class="rv">${new Date(l.at).toLocaleString('ko-KR')}</span></div>
+    <div class="ust2"><b>모델</b><span>${esc(mLabel(l.model || ''))}</span>
+    ${l.metric ? `<b>한도</b><span>${esc(String(l.metric).split('/').pop())}${l.value ? ' · ' + esc(l.value) + '번' : ''}</span>` : ''}
+    ${l.retry ? `<b>다시 되는 때</b><span>${esc(l.retry)} 뒤</span>` : ''}</div>
+    ${l.msg ? `<p class="p" style="font-size:13px;color:var(--sub);margin-top:8px">${esc(l.msg)}</p>` : ''}</div>` : '';
+  $('#usScroll').innerHTML = tbl(u.today, '오늘') + tbl(u.month, '이번 달') + lim +
+    `<div class="group"><div class="row"><span class="rt">하루 한도 초기화</span><span class="rv">${esc(u.reset || '')}</span></div></div>`;
 }

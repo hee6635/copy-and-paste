@@ -44,6 +44,28 @@ class MainActivity : ComponentActivity() {
     private var pageReady = false
     private var pendingShare: String? = null
 
+    // 백업 파일 저장 · 열기 (안드로이드 저장 창: 내 폰 · 구글 드라이브 등)
+    private var backupVideo = false
+    private val createBackup = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri == null) return@registerForActivityResult
+        thread {
+            try {
+                val n = contentResolver.openOutputStream(uri)!!.use { Backup.make(this, it, backupVideo) }
+                toast("백업했어요 · 메모 ${n}개")
+            } catch (e: Throwable) { toast("백업하지 못했어요: ${e.message}") }
+        }
+    }
+    private val openBackup = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        thread {
+            try {
+                val n = contentResolver.openInputStream(uri)!!.use { Backup.restore(this, it) }
+                toast("되살렸어요 · 메모 ${n}개")
+                js("App.onResume&&App.onResume()")
+            } catch (e: Throwable) { toast("되살리지 못했어요: ${e.message}") }
+        }
+    }
+
     private val assets by lazy {
         WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
@@ -312,6 +334,20 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun setAiOn(v: Boolean) = Gemini.setOn(ctx, v)
         @JavascriptInterface fun aiRedo(id: String) = SaveService.start(ctx, id, "ai")
         @JavascriptInterface fun aiCancel() = Gemini.cancel()
+        @JavascriptInterface fun usage(): String = Usage.summary(ctx)
+        @JavascriptInterface fun backup(withVideo: Boolean) {
+            backupVideo = withVideo
+            val d = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
+            runOnUiThread { createBackup.launch("linkmemo-$d${if (withVideo) "-video" else ""}.zip") }
+        }
+        @JavascriptInterface fun restore() { runOnUiThread { openBackup.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) } }
+        /** 질문하기: 답은 App.onAsk(결과) 로 */
+        @JavascriptInterface fun ask(q: String, context: String, history: String) {
+            thread {
+                val r = try { JSONObject(Gemini.ask(ctx, q, context, history)) } catch (e: Throwable) { JSONObject().put("error", Gemini.explain(e)) }
+                js("App.onAsk&&App.onAsk(${JSONObject.quote(r.toString())})")
+            }
+        }
         @JavascriptInterface fun setAiSpeed(v: String) = Gemini.setSpeed(ctx, v)
         @JavascriptInterface fun setWatch(v: Boolean) = Gemini.setWatch(ctx, v)
         /** 배터리 최적화 해제 요청 (뒤에서도 통신이 늦어지지 않게) */
