@@ -124,12 +124,17 @@ class SaveService : Service() {
     private fun fail(id: String, msg: String) {
         emit(Store.patch(this, id) {
             it.put("status", "error"); it.put("error", friendly(msg)); it.remove("stage")
+            it.put("errorDetail", msg.takeLast(4000))
         })
     }
+
+    private fun igLoggedIn() =
+        CookieManager.getInstance().getCookie("https://www.instagram.com")?.contains("sessionid") == true
 
     private fun friendly(msg: String): String {
         val m = msg.lowercase()
         return when {
+            ("instagram" in m || "[embed]" in m) && !igLoggedIn() -> "인스타 로그인이 필요해요"
             "login" in m || "cookies" in m || "rate-limit" in m || "401" in m -> "인스타 로그인이 필요해요"
             "private" in m -> "비공개 게시물이에요"
             "unable to resolve" in m || "network" in m || "timed out" in m -> "인터넷 연결을 확인해 주세요"
@@ -141,18 +146,133 @@ class SaveService : Service() {
         val item = Store.get(this, id) ?: return
         val url = item.optString("url")
         updateNotif("저장 중")
+        val withVideo = item.optString("mode") != "link"
         when (platformOf(url)) {
             "web" -> saveWeb(id, url)
-            else -> try {
-                saveWithYtdlp(id, url, item.optString("mode") != "link")
-            } catch (e: Throwable) {
-                // 인스타 사진 게시물 등 yt-dlp 가 못 읽는 것은 웹페이지 방식으로 한 번 더
-                if (platformOf(url) == "instagram") {
-                    try { saveWeb(id, url); return } catch (_: Throwable) {}
+            "youtube" -> saveWithYtdlp(id, url, withVideo)
+            else -> {
+                // 인스타: yt-dlp → 안 되면 퍼가기(embed) 페이지 → 그래도 안 되면 두 오류를 같이 남김
+                try {
+                    saveWithYtdlp(id, url, withVideo)
+                } catch (e: Throwable) {
+                    try { saveIgEmbed(id, url, withVideo) } catch (e2: Throwable) {
+                        throw IllegalStateException("[yt-dlp] ${e.message}\n\n[embed] ${e2.message}")
+                    }
                 }
-                throw e
+                // 댓글은 yt-dlp 가 못 가져와서 인스타 웹 통로로 따로 (로그인했을 때만)
+                try {
+                    val owner = Store.get(this, id)?.optString("author") ?: ""
+                    igComments(url, owner)?.let { cs ->
+                        Store.patch(this, id) { it.put("comments", cs) }
+                    }
+                } catch (_: Throwable) {}
+                emit(Store.patch(this, id) { it.put("status", "done"); it.remove("stage") })
             }
         }
+    }
+
+    // ── 인스타: 퍼가기(embed) 페이지 ──
+    private fun saveIgEmbed(id: String, url: String, withVideo: Boolean) {
+        stage(id, "내용 읽는 중", 0)
+        val code = igCode(url) ?: throw IllegalStateException("링크에서 게시물 번호를 찾지 못했어요")
+        val conn = Jsoup.connect("https://www.instagram.com/p/$code/embed/captioned/")
+            .userAgent(UA).timeout(20000).followRedirects(true)
+        CookieManager.getInstance().getCookie("https://www.instagram.com")?.let { conn.header("Cookie", it) }
+        val doc = conn.get()
+        val html = doc.html()
+        val user = doc.selectFirst(".UsernameText, .Username")?.text()?.trim() ?: ""
+        val capEl = doc.selectFirst(".Caption")
+        capEl?.select(".CaptionUsername, .CaptionComments")?.remove()
+        capEl?.select("br")?.forEach { it.after(org.jsoup.nodes.TextNode("\n")) }
+        val caption = capEl?.wholeText()?.trim()?.replace(Regex("\n{3,}"), "\n\n") ?: ""
+        val img = doc.selectFirst("img.EmbeddedMediaImage")?.attr("src")?.trim() ?: ""
+        val video = Regex("video_url\\\\*\":\\\\*\"(https:[^\"]+?)\\\\*\"").find(html)?.groupValues?.get(1)
+            ?.replace("\\\\u0026", "&")?.replace("\\u0026", "&")?.replace("\\", "")
+        if (caption.isEmpty() && img.isEmpty() && video == null) throw IllegalStateException("퍼가기 페이지가 비어 있어요")
+
+        val dir = Store.dir(this, id)
+        var thumb: String? = null
+        if (img.isNotEmpty()) try {
+            URL(img).openStream().use { inp -> File(dir, "thumb.jpg").outputStream().use { inp.copyTo(it) } }
+            thumb = "thumb.jpg"
+        } catch (_: Throwable) {}
+        var videoName: String? = null
+        if (withVideo && video != null) try {
+            stage(id, "영상 받는 중", 30)
+            URL(video).openStream().use { inp -> File(dir, "video.mp4").outputStream().use { inp.copyTo(it) } }
+            videoName = "video.mp4"
+        } catch (_: Throwable) {}
+
+        emit(Store.patch(this, id) {
+            it.put("status", "done"); it.remove("stage"); it.remove("error"); it.put("progress", 100)
+            it.put("platform", "instagram")
+            it.put("kind", if (video != null) "릴스" else "게시물")
+            it.put("title", firstLine(caption).ifEmpty { "$user 게시물" })
+            it.put("author", user)
+            it.put("desc", caption)
+            it.put("comments", JSONArray())
+            if (thumb != null) it.put("thumb", thumb)
+            if (videoName != null) { it.put("video", videoName); it.put("videoSize", File(dir, videoName).length()) }
+        })
+    }
+
+    // ── 인스타 댓글 (좋아요순 20개 + 작성자 답글) ──
+    private fun igComments(url: String, ownerHint: String): JSONArray? {
+        val cookies = CookieManager.getInstance().getCookie("https://www.instagram.com") ?: return null
+        if (!cookies.contains("sessionid")) return null
+        val code = igCode(url) ?: return null
+        val csrf = Regex("csrftoken=([^;]+)").find(cookies)?.groupValues?.get(1) ?: ""
+        val mid = igMediaId(code)
+        fun get(u: String): JSONObject {
+            val c = URL(u).openConnection() as java.net.HttpURLConnection
+            c.setRequestProperty("Cookie", cookies)
+            c.setRequestProperty("X-IG-App-ID", "936619743392459")
+            c.setRequestProperty("X-CSRFToken", csrf)
+            c.setRequestProperty("X-Requested-With", "XMLHttpRequest")
+            c.setRequestProperty("User-Agent", UA)
+            c.setRequestProperty("Referer", "https://www.instagram.com/p/$code/")
+            c.connectTimeout = 15000; c.readTimeout = 20000
+            if (c.responseCode != 200) throw IllegalStateException("댓글 ${c.responseCode}")
+            return JSONObject(c.inputStream.bufferedReader().readText())
+        }
+        val base = "https://www.instagram.com/api/v1/media/$mid/comments/"
+        val all = mutableListOf<JSONObject>()
+        var owner = ownerHint
+        var minId: String? = null
+        for (page in 0 until 3) {
+            val q = "?can_support_threading=true&permalink_enabled=false" +
+                (minId?.let { "&min_id=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")
+            val j = get(base + q)
+            j.optJSONObject("caption")?.optJSONObject("user")?.optString("username")?.takeIf { it.isNotEmpty() }?.let { owner = it }
+            val arr = j.optJSONArray("comments") ?: break
+            for (i in 0 until arr.length()) all.add(arr.getJSONObject(i))
+            minId = j.optString("next_min_id").takeIf { it.isNotEmpty() && it != "null" } ?: break
+        }
+        all.sortByDescending { it.optInt("comment_like_count") }
+        val out = JSONArray()
+        var childCalls = 0
+        for (c in all.take(20)) {
+            val o = JSONObject()
+                .put("a", c.optJSONObject("user")?.optString("username") ?: "")
+                .put("t", c.optString("text"))
+                .put("l", c.optInt("comment_like_count"))
+            // 작성자 답글: 미리 온 것 → 부족하면 따로 받기
+            var kids = c.optJSONArray("preview_child_comments") ?: JSONArray()
+            if (c.optInt("child_comment_count") > kids.length() && childCalls < 8) {
+                childCalls++
+                try { kids = get(base + c.optString("pk") + "/child_comments/").optJSONArray("child_comments") ?: kids } catch (_: Throwable) {}
+            }
+            val reps = JSONArray()
+            for (i in 0 until kids.length()) {
+                val k = kids.getJSONObject(i)
+                val ku = k.optJSONObject("user")?.optString("username") ?: ""
+                if (ku.isNotEmpty() && ku == owner && reps.length() < 3)
+                    reps.put(JSONObject().put("a", ku).put("t", k.optString("text")).put("l", k.optInt("comment_like_count")).put("own", true))
+            }
+            if (reps.length() > 0) o.put("r", reps)
+            out.put(o)
+        }
+        return out
     }
 
     // ── 유튜브 · 인스타 ──
@@ -248,17 +368,29 @@ class SaveService : Service() {
         else -> "bv*[height<=$q][ext=mp4]+ba[ext=m4a]/b[height<=$q][ext=mp4]/bv*[height<=$q]+ba/b[height<=$q]/b"
     }
 
-    /** 좋아요 많은 순 20개 (답글 제외) */
+    /** 좋아요 많은 순 20개 + 각 댓글에 단 작성자 답글 */
     private fun topComments(arr: JSONArray?): JSONArray {
         val list = mutableListOf<JSONObject>()
+        val byId = mutableMapOf<String, JSONObject>()
+        val replies = mutableListOf<Pair<String, JSONObject>>()
         if (arr != null) for (i in 0 until arr.length()) {
             val c = arr.optJSONObject(i) ?: continue
             val parent = c.optString("parent", "root")
-            if (parent != "root" && parent.isNotEmpty()) continue
             val text = c.optString("text").trim()
             if (text.isEmpty()) continue
-            list.add(JSONObject().put("a", c.optString("author").removePrefix("@"))
-                .put("t", text).put("l", c.optInt("like_count", 0)))
+            val o = JSONObject().put("a", c.optString("author").removePrefix("@"))
+                .put("t", text).put("l", c.optInt("like_count", 0))
+            if (parent != "root" && parent.isNotEmpty()) {
+                if (c.optBoolean("author_is_uploader")) replies.add(parent to o.put("own", true))
+                continue
+            }
+            byId[c.optString("id")] = o
+            list.add(o)
+        }
+        replies.forEach { (p, o) ->
+            val parent = byId[p] ?: return@forEach
+            val r = parent.optJSONArray("r") ?: JSONArray().also { parent.put("r", it) }
+            if (r.length() < 3) r.put(o)
         }
         list.sortByDescending { it.optInt("l") }
         return JSONArray().also { out -> list.take(20).forEach { out.put(it) } }
@@ -326,6 +458,20 @@ class SaveService : Service() {
 
     companion object {
         const val CH = "save"
+        const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36"
+
+        /** instagram.com/reel/<code>/ · /p/<code>/ · /reels/<code>/ · /tv/<code>/ */
+        fun igCode(url: String): String? =
+            Regex("instagram\\.com/(?:[^/]+/)?(?:reel|reels|p|tv)/([A-Za-z0-9_-]+)").find(url)?.groupValues?.get(1)
+
+        /** 게시물 번호(shortcode) → 숫자 id */
+        fun igMediaId(code: String): String {
+            val abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+            var n = java.math.BigInteger.ZERO
+            val b64 = java.math.BigInteger.valueOf(64)
+            for (ch in code.take(11)) n = n.multiply(b64).add(java.math.BigInteger.valueOf(abc.indexOf(ch).toLong()))
+            return n.toString()
+        }
         fun platformOf(url: String): String {
             val h = try { URL(url).host.lowercase() } catch (_: Exception) { "" }
             return when {

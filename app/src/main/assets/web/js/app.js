@@ -61,7 +61,7 @@
       <div class="jt">${platIcon(it.platform)}</div>
       <div class="jb"><div class="jh"><b>${esc(err ? host : (it.stage || '저장 중'))}</b><span>${err ? esc(it.error || '실패') : p + '%'}</span></div>
       ${err ? '' : `<div class="bar"><i style="transform:scaleX(${p / 100})"></i></div>`}</div>
-      ${err ? `<button class="jbtn" data-retry="${esc(it.id)}">다시</button><button class="jbtn" data-del="${esc(it.id)}">지우기</button>` : ''}
+      ${err ? `<div class="jbtns"><button class="jbtn" data-errcopy="${esc(it.id)}">오류 복사</button><button class="jbtn" data-del="${esc(it.id)}">지우기</button><button class="jbtn dark" data-retry="${esc(it.id)}">다시</button></div>` : ''}
     </div>`;
   }
 
@@ -229,7 +229,8 @@
       body = (it.desc ? `<p class="p" style="color:var(--sub);margin-bottom:12px">${esc(it.desc)}</p>` : '') + (it.body ? longText(it.body) : '<div class="none">본문을 읽지 못했어요</div>');
     } else {
       const cs = it.comments || [];
-      body = cs.length ? cs.map((c, i) => `<div class="cmt${c.star ? ' star' : ''}"><div class="h"><b>${c.star ? '★ ' : ''}@${esc(c.a)}</b><span>♡ ${c.l || 0}</span></div><p>${esc(c.t)}</p></div>`).join('')
+      body = cs.length ? cs.map((c, i) => `<div class="cmt${c.star ? ' star' : ''}"><div class="h"><b>${c.star ? '★ ' : ''}@${esc(c.a)}</b><span>♡ ${c.l || 0}</span></div><p>${esc(c.t)}</p>
+        ${(c.r || []).map(r => `<div class="rep"><div class="h"><b>@${esc(r.a)}${r.own ? '<span class="own">작성자</span>' : ''}</b><span>♡ ${r.l || 0}</span></div><p>${esc(r.t)}</p></div>`).join('')}</div>`).join('')
         : '<div class="none">댓글이 없어요</div>';
     }
     $('#dBody').innerHTML = `<div class="sec">${body}</div>`;
@@ -274,7 +275,7 @@
     const caps = (it.captures || []).filter(c => c.text || c.memo);
     if (caps.length) { L.push('', '── 캡처 ──'); caps.forEach(c => L.push('[' + fmtT(c.t) + '] ' + [c.text, c.memo].filter(Boolean).join(' / '))); }
     const cs = it.comments || [];
-    if (cs.length) { L.push('', '── 댓글 ──'); cs.forEach((c, i) => L.push((i + 1) + '. @' + c.a + ' (♡' + (c.l || 0) + ') ' + c.t)); }
+    if (cs.length) { L.push('', '── 댓글 ──'); cs.forEach((c, i) => { L.push((i + 1) + '. @' + c.a + ' (♡' + (c.l || 0) + ') ' + c.t); (c.r || []).forEach(r => L.push('   ↳ @' + r.a + (r.own ? ' [작성자]' : '') + ' ' + r.t)); }); }
     return L.join('\n');
   }
 
@@ -361,6 +362,7 @@
       renderHome();
       if (cur === o.id && $('#detail').classList.contains('open')) {
         renderCaps(o);
+        if (!document.activeElement || document.activeElement.id !== 'dMemo') renderDetail(false);
         if (curCap) renderCap();
       }
     },
@@ -383,6 +385,7 @@
     const t = e.target;
     const card = t.closest('.card'); if (card) return openDetail(card.dataset.id);
     const pill = t.closest('.pill'); if (pill) { filter = pill.dataset.t; renderHome(); return; }
+    const ec = t.closest('[data-errcopy]'); if (ec) { const it = byId(ec.dataset.errcopy); A.copy((it.url || '') + '\n' + (it.errorDetail || it.error || '')); toast('오류 내용을 복사했어요'); return; }
     const rt = t.closest('[data-retry]'); if (rt) return A.retry(rt.dataset.retry);
     const dl = t.closest('[data-del]'); if (dl) { A.remove(dl.dataset.del); items = items.filter(x => x.id !== dl.dataset.del); renderHome(); return; }
     if (t.closest('[data-back]')) return closeTop();
@@ -464,10 +467,11 @@
     const now = Date.now();
     let data = [
       { id: 'a', url: 'https://www.instagram.com/reel/x', platform: 'instagram', kind: '릴스', status: 'done', title: '나트랑 시내 맛집 4곳 추천', author: 'yytable', desc: '나트랑 시내에서 현지인이 많이 가는 식당 4곳!\n1. Lai Seafood\n2. Ớt Hiểm Thai Cuisine', duration: 48, w: 720, h: 1280, memo: '12월 여행 때 저녁', tags: ['여행'], createdAt: now,
-        comments: [{ a: 'traveler_kim', t: '저녁 6시 전에 가야 웨이팅 없어요', l: 312 }, { a: 'minji', t: '저장해둡니다', l: 54 }], captures: [] },
+        comments: [{ a: 'traveler_kim', t: '저녁 6시 전에 가야 웨이팅 없어요', l: 312, r: [{ a: 'yytable', t: '맞아요! 6시 넘으면 30분 넘게 기다려요', l: 20, own: true }] }, { a: 'minji', t: '저장해둡니다', l: 54 }], captures: [] },
       { id: 'b', url: 'https://youtube.com/shorts/y', platform: 'youtube', kind: '쇼츠', status: 'done', title: '피그마 아이콘 파일 50개 이상 무료 배포', author: 'figma.create', desc: '댓글에 icon 남기면 보내드려요', duration: 35, w: 720, h: 1280, tags: ['디자인'], createdAt: now, comments: [], captures: [] },
       { id: 'c', url: 'https://brunch.co.kr/z', platform: 'web', kind: '웹', status: 'done', title: '홈카페 라떼아트 기초', author: 'brunch.co.kr', desc: '', body: '우유 온도는 60도가 좋아요.', tags: [], createdAt: now, comments: [], captures: [] },
       { id: 'd', url: 'https://www.instagram.com/reel/z', platform: 'instagram', status: 'saving', stage: '영상 받는 중', progress: 62, createdAt: now },
+      { id: 'e', url: 'https://www.instagram.com/reel/q', platform: 'instagram', status: 'error', error: '인스타 로그인이 필요해요', errorDetail: 'ERROR: login required', createdAt: now },
     ];
     return {
       items: () => JSON.stringify(data),
