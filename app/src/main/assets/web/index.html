@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>링크메모</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- 홈 -->
+<main id="home" class="page">
+  <header class="top">
+    <h1>링크메모</h1>
+    <button class="ib" id="btnSettings" aria-label="설정"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></button>
+  </header>
+  <label class="search"><svg class="ic s" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="q" type="search" placeholder="검색" autocomplete="off"><button class="ib x hide" id="qClear" aria-label="지우기"><svg class="ic s" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></label>
+  <nav class="pills" id="chips"></nav>
+  <section id="jobs"></section>
+  <section class="cols" id="grid"><div class="col"></div><div class="col"></div></section>
+  <div class="empty hide" id="empty">
+    <svg class="ic big" viewBox="0 0 24 24"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg>
+    <b>인스타 · 유튜브에서 공유 → 링크메모</b>
+  </div>
+  <div class="dock">
+    <div class="inrow">
+      <input id="paste" class="inp" type="url" placeholder="링크 붙여넣기" autocomplete="off">
+      <button class="send" id="pasteGo" aria-label="저장"><i></i><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+    </div>
+  </div>
+</main>
+
+<!-- 상세 -->
+<section id="detail" class="page sub" aria-hidden="true">
+  <header class="top c">
+    <button class="ib" data-back aria-label="뒤로"><svg class="ic" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <div class="t" id="dTopTitle"></div>
+    <div class="ib"></div>
+  </header>
+  <div class="scroll" id="dScroll"></div>
+  <nav class="bar5">
+    <button id="aOpen"><svg class="ic" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>링크로 이동</button>
+    <button id="aSave"><svg class="ic" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>원본 저장</button>
+    <button id="aCopy"><svg class="ic" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h9"/></svg>복사</button>
+    <button id="aTxt"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/></svg>txt</button>
+    <button id="aDel" class="danger"><svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>삭제</button>
+  </nav>
+</section>
+
+<!-- 캡처 보기 -->
+<section id="capView" class="page sub" aria-hidden="true">
+  <header class="top c">
+    <button class="ib" data-back aria-label="닫기"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="t" id="cTitle"></div>
+    <button class="ib" id="cGallery" aria-label="갤러리에 저장"><svg class="ic" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></button>
+  </header>
+  <div class="scroll" id="cScroll"></div>
+  <div class="dock solid"><div class="inrow">
+    <button class="inp btn" id="cPlay">이 장면부터 재생</button>
+    <button class="round" id="cDel" aria-label="캡처 지우기"><svg class="ic danger" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+  </div></div>
+</section>
+
+<!-- 설정 -->
+<section id="settings" class="page sub" aria-hidden="true">
+  <header class="top c">
+    <button class="ib" data-back aria-label="뒤로"><svg class="ic" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <div class="t">설정</div><div class="ib"></div>
+  </header>
+  <div class="scroll" id="sScroll"></div>
+</section>
+
+<div id="dim" class="dim"></div>
+
+<!-- 저장 창 -->
+<section id="saveSheet" class="sheet" aria-hidden="true">
+  <div class="grab"></div>
+  <div class="mini"><div class="mt" id="ssIcon"></div><div class="mtxt"><b id="ssHost"></b><span id="ssUrl"></span></div></div>
+  <div id="ssModeWrap">
+    <div class="lbl">저장 방식</div>
+    <div class="choose" id="ssMode"><i></i><button data-v="video">영상까지</button><button data-v="link">링크만</button></div>
+  </div>
+  <label class="field"><input id="ssMemo" placeholder=" " autocomplete="off"><span>한 줄 메모</span></label>
+  <button class="bigbtn" id="ssGo">저장</button>
+</section>
+
+<!-- 작은 입력 창 (태그 추가 등) -->
+<section id="askSheet" class="sheet" aria-hidden="true">
+  <div class="grab"></div>
+  <div class="stitle" id="askTitle"></div>
+  <label class="field"><input id="askInput" placeholder=" " autocomplete="off"><span id="askLabel"></span></label>
+  <button class="bigbtn" id="askGo">확인</button>
+</section>
+
+<!-- 확인 창 -->
+<section id="confirmSheet" class="sheet" aria-hidden="true">
+  <div class="grab"></div>
+  <div class="stitle" id="cfTitle"></div>
+  <div class="two"><button class="bigbtn gray" id="cfNo">취소</button><button class="bigbtn red" id="cfYes">지우기</button></div>
+</section>
+
+<div id="toast" class="toast"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
