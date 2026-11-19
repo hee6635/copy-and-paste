@@ -606,12 +606,12 @@
   }
   function renderDiag() {
     $('#dgSteps').classList.toggle('hide', !diagSteps.length);
-    $('#dgSteps').innerHTML = diagSteps.map(s => `<div class="step ${s.state}"><div class="dot">${s.state === 'ok' ? '✓' : s.state === 'fail' ? '✕' : s.state === 'skip' ? '–' : ''}</div>
+    $('#dgSteps').innerHTML = diagSteps.map(s => `<div class="step ${s.state}"><div class="dot">${s.state === 'ok' ? '✓' : s.state === 'fail' ? '✕' : s.state === 'skip' ? '–' : s.state === 'warn' ? '!' : ''}</div>
       <div class="sb"><b>${esc(s.name)}</b><div class="sm">${esc(s.msg || (s.state === 'run' ? '확인 중…' : ''))}</div>${s.state === 'fail' && s.detail ? `<pre>${esc(s.detail)}</pre>` : ''}</div></div>`).join('');
   }
   function diagText() {
     const L = ['[링크메모 검사] ' + $('#dgUrl').value];
-    diagSteps.forEach(s => { L.push((s.state === 'ok' ? '✓ ' : s.state === 'fail' ? '✕ ' : '– ') + s.name + ' : ' + (s.msg || '')); if (s.state === 'fail' && s.detail) L.push('   ' + s.detail.replace(/\n/g, '\n   ')); });
+    diagSteps.forEach(s => { L.push((s.state === 'ok' ? '✓ ' : s.state === 'fail' ? '✕ ' : s.state === 'warn' ? '! ' : '– ') + s.name + ' : ' + (s.msg || '')); if ((s.state === 'fail' || s.state === 'ok') && s.detail && s.detail.includes('\n')) L.push('   ' + s.detail.replace(/\n/g, '\n   ')); });
     if (diagItem && diagItem.errorDetail) L.push('', '[저장 오류]', diagItem.errorDetail);
     if (diagItem && diagItem.commentError) L.push('', '[댓글 오류]', diagItem.commentError);
     return L.join('\n');

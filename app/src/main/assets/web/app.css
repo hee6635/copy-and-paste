@@ -298,3 +298,6 @@ body.selecting .card .ck{display:flex}
 .sw.on::after{transform:translateX(20px)}
 .row:disabled{opacity:.4}
 .field.keyf{margin:4px 16px 8px}
+.step.warn .dot{background:var(--line);color:var(--sub)}
+.step.warn .sm{color:var(--sub)}
+.step.ok pre{display:none}

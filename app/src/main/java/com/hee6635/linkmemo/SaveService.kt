@@ -210,7 +210,7 @@ class SaveService : Service() {
                 o.remove("aiBusy"); o.remove("aiError")
             })
         } catch (e: Throwable) {
-            emit(Store.patch(this, id) { it.remove("aiBusy"); it.put("aiError", e.message ?: e.toString()) })
+            emit(Store.patch(this, id) { it.remove("aiBusy"); it.put("aiError", Gemini.explain(e)) })
         }
     }
 

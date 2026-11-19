@@ -16,6 +16,25 @@ import java.util.Locale
  */
 object Gemini {
     const val MODEL = "gemini-flash-latest"
+    /** 차례로 시도: 최신 → 안정판 → 가벼운 것 */
+    val MODELS = listOf("gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest")
+
+    class HttpErr(val code: Int, msg: String) : IllegalStateException(msg)
+
+    /** 오류를 쉬운 말로 (원인 후보 포함) */
+    fun explain(e: Throwable): String {
+        val m = (e.message ?: "").lowercase()
+        return when {
+            e is HttpErr -> e.message ?: "오류 ${e.code}"
+            e is java.net.UnknownHostException -> "구글 서버 주소를 못 찾아요 → 인터넷이 끊겼거나 DNS · 개인 DNS(광고 차단) 설정 문제"
+            e is java.net.SocketTimeoutException -> "응답이 너무 늦어요(시간 초과) → 서버 혼잡이거나 인터넷이 느림"
+            e is javax.net.ssl.SSLException || "ssl" in m || "certificate" in m -> "보안 연결 실패 → 폰 날짜·시간이 틀렸거나, 공용 와이파이 로그인 화면, VPN · 보안 앱이 가로챔"
+            e is java.net.ConnectException -> "서버에 닿지 못했어요 → 인터넷 끊김, 방화벽 · 회사 와이파이 차단"
+            "abort" in m || "reset" in m || "broken pipe" in m || "unexpected end" in m ->
+                "연결이 중간에 끊겼어요 → 와이파이↔데이터 전환, 앱이 뒤로 가서 절전, 또는 서버 혼잡"
+            else -> e.message ?: e.toString()
+        }
+    }
     private const val BASE = "https://generativelanguage.googleapis.com"
 
     private fun sp(ctx: Context) = ctx.getSharedPreferences("ai", Context.MODE_PRIVATE)
@@ -38,12 +57,16 @@ object Gemini {
         val code = c.responseCode
         val text = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
         if (code !in 200..299) {
-            val msg = try { JSONObject(text).optJSONObject("error")?.optString("message") } catch (_: Exception) { null }
-            throw IllegalStateException(when (code) {
-                400 -> if (text.contains("API key not valid")) "API 키가 맞지 않아요" else "요청 오류: ${msg ?: text.take(200)}"
-                403 -> "API 키 권한이 없어요: ${msg ?: ""}"
-                429 -> "무료 사용량을 넘었어요. 잠시 뒤 다시 해 주세요"
-                else -> "Gemini 오류 $code: ${msg ?: text.take(200)}"
+            val msg = try { JSONObject(text).optJSONObject("error")?.optString("message") } catch (_: Exception) { null } ?: text.take(200)
+            throw HttpErr(code, when (code) {
+                400 -> if (text.contains("API key not valid") || text.contains("API_KEY_INVALID")) "400 키가 맞지 않아요 → 키를 다시 복사해서 넣기" else "400 요청 오류: $msg"
+                401 -> "401 인증 실패 → 키를 다시 넣기"
+                403 -> "403 이 키로 사용이 막혀 있어요 → AI Studio 에서 키 · API 사용 설정, 지역 제한 확인 ($msg)"
+                404 -> "404 모델을 찾을 수 없어요 ($msg)"
+                429 -> "429 사용량 한도 → 무료 분당 · 하루 한도를 넘었어요. 잠시 뒤 또는 내일"
+                500, 502, 504 -> "$code 구글 서버 오류 → 잠시 뒤 다시"
+                503 -> "503 구글 서버가 바빠요(모델 혼잡) → 잠시 뒤 또는 다른 모델"
+                else -> "$code $msg"
             })
         }
         return c to text
@@ -159,8 +182,7 @@ object Gemini {
                 .put("responseSchema", schema())
                 .put("temperature", 0.3))
         onStage(if (withVideo) "받아쓰는 중" else "정리 중")
-        val (_, text) = http("POST", "$BASE/v1beta/models/$MODEL:generateContent", key,
-            req.toString().toByteArray(), mapOf("Content-Type" to "application/json"), 300000)
+        val (text, used) = generate(key, req, onStage)
         count(ctx)
         val res = JSONObject(text)
         val cand = res.optJSONArray("candidates")?.optJSONObject(0)
@@ -168,16 +190,59 @@ object Gemini {
         val out = cand.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")
             ?: throw IllegalStateException("답이 비어 있어요 (${cand.optString("finishReason")})")
         return JSONObject(out.trim().removePrefix("```json").removeSuffix("```").trim())
-            .put("at", System.currentTimeMillis()).put("video", withVideo)
+            .put("at", System.currentTimeMillis()).put("video", withVideo).put("model", used)
     }
 
-    /** 키가 맞는지 짧게 확인 (검사용) */
-    fun ping(ctx: Context): String {
-        val key = key(ctx)
-        if (key.isEmpty()) throw IllegalStateException("API 키가 없어요 (설정 › Gemini API 키)")
-        val req = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", "한 단어로: 안녕")))))
-        val (_, t) = http("POST", "$BASE/v1beta/models/$MODEL:generateContent", key, req.toString().toByteArray(), mapOf("Content-Type" to "application/json"), 30000)
-        return JSONObject(t).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
-            ?.optJSONObject(0)?.optString("text")?.trim()?.take(30) ?: "응답 ✓"
+    /** 모델마다 최대 3번(2초 · 5초 쉬고), 바쁘거나 끊기면 다음 모델로. 키 문제(400/401/403)는 바로 멈춤 */
+    private fun generate(key: String, req: JSONObject, onStage: (String) -> Unit): Pair<String, String> {
+        val tried = StringBuilder()
+        for (model in MODELS) {
+            for (attempt in 0 until 3) {
+                try {
+                    val (_, t) = http("POST", "$BASE/v1beta/models/$model:generateContent", key,
+                        req.toString().toByteArray(), mapOf("Content-Type" to "application/json"), 300000)
+                    return t to model
+                } catch (e: Throwable) {
+                    tried.append("$model #${attempt + 1}: ${explain(e)}\n")
+                    if (e is HttpErr && e.code in listOf(400, 401, 403)) throw IllegalStateException(tried.toString().trim())
+                    if (e is HttpErr && (e.code == 404 || e.code == 429)) break   // 이 모델은 건너뛰기
+                    if (attempt < 2) { onStage("다시 시도 중"); Thread.sleep(if (attempt == 0) 2000 else 5000) }
+                }
+            }
+        }
+        throw IllegalStateException(tried.toString().trim())
     }
+
+    // ── 검사용 ──
+    fun keyShape(k: String): String? = when {
+        k.isEmpty() -> "키가 없어요"
+        k != k.trim() || k.contains(" ") || k.contains("\n") -> "키에 공백 · 줄바꿈이 섞였어요"
+        !k.startsWith("AIza") -> "AIza 로 시작하지 않아요 (다른 키를 복사했을 수 있어요)"
+        k.length != 39 -> "길이가 ${k.length}자예요 (보통 39자 → 잘렸거나 더 붙었어요)"
+        else -> null
+    }
+
+    /** 키로 모델 목록 받기 → 사용 가능한 모델 이름들 */
+    fun listModels(ctx: Context): List<String> {
+        val (_, t) = http("GET", "$BASE/v1beta/models?pageSize=200", key(ctx), null, timeout = 20000)
+        val a = JSONObject(t).optJSONArray("models") ?: JSONArray()
+        return (0 until a.length()).map { a.getJSONObject(it).optString("name").removePrefix("models/") }
+    }
+
+    fun pingModel(ctx: Context, model: String): String {
+        val req = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", "한 단어로: 안녕")))))
+        val (_, t) = http("POST", "$BASE/v1beta/models/$model:generateContent", key(ctx), req.toString().toByteArray(), mapOf("Content-Type" to "application/json"), 30000)
+        return JSONObject(t).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
+            ?.optJSONObject(0)?.optString("text")?.trim()?.take(20) ?: "응답 ✓"
+    }
+
+    /** 작은 파일을 올렸다가 지우기 (영상 올리기 통로 확인) */
+    fun uploadTest(ctx: Context): String {
+        val f = File(ctx.cacheDir, "gemini_test.txt").also { it.writeText("linkmemo test") }
+        val uri = upload(ctx, key(ctx), f, "text/plain")
+        val name = "files/" + uri.substringAfterLast("/files/")
+        try { http("DELETE", "$BASE/v1beta/$name", key(ctx), null, timeout = 15000) } catch (_: Throwable) {}
+        return "올리기 ✓"
+    }
+
 }

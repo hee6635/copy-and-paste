@@ -116,7 +116,9 @@ object Diag {
 
         if (platform == "instagram") {
             step("퍼가기 페이지 (예비 방법)") { s ->
-                val e = Ig.embed(url)
+                val e = try { Ig.embed(url) } catch (x: Throwable) {
+                    s.state = "warn"; s.msg = "예비 방법은 안 됨 (위 방법이 되면 괜찮아요) · ${x.message}"; return@step
+                }
                 s.msg = "설명 ${e.caption.length}자 · 사진 ${if (e.img.isNotEmpty()) "✓" else "✕"} · 영상 주소 ${if (e.video != null) "✓" else "✕"}"
                 s.detail = "user: ${e.user}\n${e.caption.take(200)}"
             }
@@ -162,13 +164,63 @@ object Diag {
             if (text.isEmpty()) throw IllegalStateException("글자 읽기 모델이 아직 준비 안 됨 (구글 Play 서비스가 받는 중일 수 있어요)")
         }
 
-        if (Gemini.key(ctx).isNotEmpty()) step("Gemini (AI 정리)") { s ->
-            s.msg = "응답: " + Gemini.ping(ctx) + " · 이번 달 ${Gemini.usedThisMonth(ctx)}회"
-        } else skip("Gemini (AI 정리)", "API 키가 없어요")
+        // ── AI(Gemini): 어디서 막히는지 단계별로 ──
+        val key = Gemini.key(ctx)
+        if (key.isEmpty()) skip("AI · 키", "API 키가 없어요 → 설정 › Gemini API 키")
+        else {
+            step("AI · 키 모양") { s ->
+                Gemini.keyShape(key)?.let { throw IllegalStateException(it) }
+                s.msg = "AIza…${key.takeLast(4)} · ${key.length}자"
+            }
+            step("AI · 폰 인터넷") { s ->
+                val cm = ctx.getSystemService(android.net.ConnectivityManager::class.java)
+                val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+                    ?: throw IllegalStateException("연결된 인터넷이 없어요")
+                val t = mutableListOf<String>()
+                if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) t += "와이파이"
+                if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)) t += "모바일 데이터"
+                if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) t += "VPN 켜짐"
+                val ok = caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                if (cm.restrictBackgroundStatus == android.net.ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED) t += "데이터 절약 켜짐"
+                val pdns = if (android.os.Build.VERSION.SDK_INT >= 28) cm.getLinkProperties(cm.activeNetwork)?.privateDnsServerName else null
+                if (pdns != null) t += "개인 DNS $pdns"
+                s.msg = t.joinToString(" · ").ifEmpty { "알 수 없음" }
+                if (!ok) throw IllegalStateException(s.msg + " · 인터넷 확인 안 됨(로그인 화면이 필요한 와이파이일 수 있어요)")
+            }
+            val reach = step("AI · 구글 서버 연결") { s ->
+                val t0 = System.currentTimeMillis()
+                val c = URL("https://generativelanguage.googleapis.com/").openConnection() as HttpURLConnection
+                c.connectTimeout = 10000; c.readTimeout = 10000
+                try { c.responseCode } catch (e: Throwable) { throw IllegalStateException(Gemini.explain(e)) }
+                s.msg = "닿음 · ${System.currentTimeMillis() - t0}ms"
+            }
+            var models = emptyList<String>()
+            val keyOk = if (reach.state != "ok") { skip("AI · 키 확인", "서버에 닿지 않아서 못 함"); false } else step("AI · 키 확인") { s ->
+                models = try { Gemini.listModels(ctx) } catch (e: Throwable) { throw IllegalStateException(Gemini.explain(e)) }
+                val have = Gemini.MODELS.map { m -> m + if (m in models) " ✓" else " ✕" }
+                s.msg = "키 유효 · 모델 ${models.size}개"
+                s.detail = have.joinToString("\n")
+            }.state == "ok"
+            for (m in Gemini.MODELS) {
+                if (!keyOk) { skip("AI · $m", "키 확인이 안 돼서 못 함"); continue }
+                step("AI · $m") { s ->
+                    val t0 = System.currentTimeMillis()
+                    val r = try { Gemini.pingModel(ctx, m) } catch (e: Throwable) { throw IllegalStateException(Gemini.explain(e)) }
+                    s.msg = "응답 \"$r\" · ${System.currentTimeMillis() - t0}ms"
+                }
+            }
+            if (keyOk) step("AI · 영상 올리기 통로") { s ->
+                s.msg = try { Gemini.uploadTest(ctx) } catch (e: Throwable) { throw IllegalStateException(Gemini.explain(e)) }
+                s.msg += " · 이번 달 정리 ${Gemini.usedThisMonth(ctx)}회"
+            } else skip("AI · 영상 올리기 통로", "키 확인이 안 돼서 못 함")
+        }
 
         step("저장 공간") { s ->
             val free = ctx.filesDir.usableSpace
-            s.msg = "남은 공간 ${free / 1_000_000}MB · 앱 사용 ${Store.usedBytes(ctx) / 1_000_000}MB"
+            val used = Store.usedBytes(ctx)
+            val vids = try { org.json.JSONArray(Store.all(ctx)).let { a -> (0 until a.length()).count { a.getJSONObject(it).optString("video").isNotEmpty() } } } catch (_: Throwable) { 0 }
+            fun mb(b: Long) = if (b < 1_000_000) "${b / 1000}KB" else String.format(java.util.Locale.US, "%.1fMB", b / 1e6)
+            s.msg = "남은 공간 ${free / 1_000_000}MB · 앱 사용 ${mb(used)} · 영상 저장 ${vids}개"
             if (free < 200_000_000) throw IllegalStateException("폰 저장 공간이 부족해요 (${free / 1_000_000}MB)")
         }
 
