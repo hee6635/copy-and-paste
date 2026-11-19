@@ -4,7 +4,7 @@
 function renderAi(it) {
   const el = $('#dAi'); if (!el) return;
   const ai = it.ai;
-  if (it.aiBusy) { liveRender(it); return; }
+  if (it.aiBusy && !(ai && ai.light)) { liveRender(it); return; }
   if (live) typeTok++;
   live = null;
   if (!ai) {
@@ -16,7 +16,7 @@ function renderAi(it) {
       <div class="bt"><button class="chip dark" data-airedo>다시 정리</button><button class="chip" data-manual>제미나이 앱으로</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>${logHtml(it.aiLog, true)}</div>` : '';
     return;
   }
-  let h = '';
+  let h = deepHtml(it);
   const sum = ai.summary || [];
   const places = (ai.places || []).filter(p => p && p.name);
   const sugg = ai.folder && ai.folder.trim() && fPath(it.folder) !== ai.folder.trim() ? ai.folder.trim() : '';
@@ -279,3 +279,13 @@ document.addEventListener('click', e => {
     delete manualWait[cur]; replace(JSON.parse(r)); renderDetail(false); renderHome(); toast('정리를 넣었어요');
   }
 });
+
+/** 2단계(영상 자세히 보기) 상태: 보는 중 · 실패(언제 다시) */
+function deepHtml(it) {
+  const ai = it.ai || {};
+  if (!ai.light) return '';
+  if (it.aiBusy) return `<div class="sec deep"><span class="dot"></span><b>영상 자세히 보는 중</b><em data-since="${it.aiBusyAt || Date.now()}">${since(it.aiBusyAt)}</em></div>`;
+  if (!ai.deepError) return '';
+  const when = it.aiRetryAt > Date.now() ? hm(it.aiRetryAt) + '쯤 영상 다시 볼게요' : '영상 자세히 보기 실패';
+  return `<div class="sec deep"><b>${when}</b><button class="chip dark" data-airedo>지금 다시</button></div>`;
+}

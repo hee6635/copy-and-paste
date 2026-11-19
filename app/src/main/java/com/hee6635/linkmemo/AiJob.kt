@@ -65,7 +65,7 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
     }
     val item = Store.get(this, id) ?: return
     Usage.memo(this)
-    emit(Store.patch(this, id) { it.put("aiBusy", if (auto) "AI 다시 정리 준비 중" else "AI 정리 준비 중"); it.put("aiBusyAt", System.currentTimeMillis()); it.remove("aiError"); it.remove("aiLog"); it.remove("aiRetryAt"); if (!auto) it.remove("aiRetryN") })
+    emit(Store.patch(this, id) { it.put("aiBusy", if (auto) "AI 다시 정리 준비 중" else "AI 정리 준비 중"); it.put("aiBusyAt", System.currentTimeMillis()); it.remove("aiError"); it.remove("aiLog"); it.remove("aiRetryAt"); if (!auto) it.remove("aiRetryN"); it.optJSONObject("ai")?.remove("deepError") })
     updateNotif("AI 정리 중")
     // 긴 영상(10분 넘음): 5분씩 목차 → 목차를 글로 붙여 짧게 한 번 더 정리(팁 · 장소 · 태그)
     if (item.optBoolean("long") && SaveService.platformOf(item.optString("url")) == "youtube") {
@@ -102,8 +102,22 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
         }
         return
     }
+    // 1단계: 영상을 볼 메모면 먼저 글만으로 빠르게 정리해 바로 보여 줌 (2단계 영상 보기가 실패해도 남음)
+    val plat = SaveService.platformOf(item.optString("url"))
+    val videoLikely = item.optString("video").isNotEmpty() || (Gemini.watch(this) && (plat == "youtube" || plat == "instagram"))
+    var hasAi = item.optJSONObject("ai") != null
+    if (videoLikely && !hasAi) {
+        try {
+            val a1 = Gemini.organize(this, item, folderPaths(), { st -> emit(Store.patch(this, id) { it.put("aiBusy", "AI 빠르게 $st") }) }, quick = true)
+            a1.put("light", true)
+            emit(Store.patch(this, id) { o -> mergeAi(o, a1); o.put("aiBusy", "AI 영상 자세히 보는 중"); o.put("aiBusyAt", System.currentTimeMillis()) })
+            hasAi = true
+        } catch (e: Throwable) {
+            if (e.message == "중지했어요") { emit(Store.patch(this, id) { it.remove("aiBusy"); it.remove("aiBusyAt") }); return }
+        }
+    }
     try {
-        // 링크만 저장한 것도 영상 보기: 유튜브는 링크 그대로, 인스타는 잠깐 받아서
+        // 2단계 — 링크만 저장한 것도 영상 보기: 유튜브는 링크 그대로, 인스타는 잠깐 받아서
         var temp: File? = null; var yt: String? = null
         val pre = mutableListOf<Triple<String, Long, String>>()
         val url = item.optString("url")
@@ -134,7 +148,7 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
         val ai = try {
             Gemini.organize(this, item, folderPaths(), { st ->
                 emit(Store.patch(this, id) { it.put("aiBusy", "AI $st") })
-            }, temp, yt, pre) { txt -> stopOcr.set(true); Events.partial(id, txt) }
+            }, temp, yt, pre, fallback = !hasAi) { txt -> stopOcr.set(true); Events.partial(id, txt) }
         } catch (e: Throwable) { stopOcr.set(true); side.join(60000); temp?.delete(); holder[0]?.delete(); throw e }
         stopOcr.set(true)
         side.join(60000)
@@ -176,9 +190,12 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
     } catch (e: Throwable) {
         emit(Store.patch(this, id) {
             it.remove("aiBusy"); it.remove("aiBusyAt")
-            it.put("aiError", if (e is Gemini.AiFail) (e.message ?: "") else Gemini.explain(e))
-            if (e is Gemini.AiFail) it.put("aiLog", e.log)
-            AiRetry.plan(this, it, e, it.optString("aiError"))
+            val msg = if (e is Gemini.AiFail) (e.message ?: "") else Gemini.explain(e)
+            val cur = it.optJSONObject("ai")
+            // 1단계 결과가 있으면 그대로 두고 "영상 자세히 보기"만 실패로 표시
+            if (cur != null && cur.optBoolean("light")) { cur.put("deepError", msg.lineSequence().first()); if (e is Gemini.AiFail) cur.put("deepLog", e.log) }
+            else { it.put("aiError", msg); if (e is Gemini.AiFail) it.put("aiLog", e.log) }
+            AiRetry.plan(this, it, e, msg)
         })
     }
 }

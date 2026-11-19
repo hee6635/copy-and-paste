@@ -54,6 +54,8 @@ object Gemini {
     class AiFail(msg: String, val log: JSONObject) : IllegalStateException(msg)
     /** 키 문제 (다시 해도 안 됨) */
     class KeyBad(msg: String) : IllegalStateException(msg)
+    /** 답이 중간에 끊겨 못 살림 */
+    class CutErr(msg: String) : IllegalStateException(msg)
     /** 1초씩 쉬며 중지 확인 */
     private fun nap(ms: Long) { var left = ms; while (left > 0) { checkCancel(); Thread.sleep(minOf(1000L, left)); left -= 1000 } }
     /** 429 본문: 하루 한도가 아니고 구글이 60초 이하로 기다리라고 하면 그 시간(ms), 아니면 0 */
@@ -249,7 +251,7 @@ object Gemini {
         return uri
     }
 
-    internal fun prompt(item: JSONObject, folders: List<String>, withVideo: Boolean): String {
+    internal fun prompt(item: JSONObject, folders: List<String>, withVideo: Boolean, noTranscript: Boolean = false): String {
         val sb = StringBuilder()
         sb.append("""너는 사용자가 저장한 SNS 게시물 · 영상 · 웹페이지를 메모로 정리하는 도우미야. 한국어로, 짧고 쉽게.
 규칙:
@@ -270,7 +272,7 @@ object Gemini {
         if (withVideo) sb.append("- keyshots: 캡처해 둘 만한 중요한 장면 3~5개 (메뉴판 · 가격표 · 간판 · 지도 · 완성 요리처럼 정보가 화면에 보이는 순간). t 는 그 시각(초, 화면이 또렷한 순간), why 는 무엇이 보이는지 짧게, sec · idx 는 사진에 보이는 것이 그 줄에 직접 나오는 경우만 (summary · facts · steps(레시피 순서) 와 그 줄 번호 0부터). 장소 사진은 places 의 t 로 따로 찍으니 keyshots 에 넣지 않아도 됨. 예: 망고빙수 사진을 호텔 줄에 붙이면 안 됨. 맞는 줄이 없으면 idx 는 -1.\n")
         else sb.append("- keyshots: 빈 목록.\n")
         sb.append("- 번역: transcript 의 말이나 화면 글자가 한국어가 아니면 text 는 원문 그대로 두고 ko 에 자연스러운 한국어 번역 (한국어면 ko 는 빈칸). desc_ko 는 [설명]이 한국어가 아니면 한국어 번역, 한국어면 빈칸. 다른 칸(summary · places · tips 등)은 언제나 한국어로.\n")
-        if (withVideo) sb.append("- transcript: 영상에서 말하는 내용을 시간(초)과 함께 받아쓰기. 화면에 크게 나오는 글자도 [화면] 으로 넣기. 말이 없으면 빈 목록.\n")
+        if (withVideo && !noTranscript) sb.append("- transcript: 영상에서 말하는 내용을 시간(초)과 함께 받아쓰기. 화면에 크게 나오는 글자도 [화면] 으로 넣기. 말이 없으면 빈 목록.\n")
         else sb.append("- transcript: 빈 목록.\n")
         sb.append("\n오늘: ").append(java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())).append("\n")
         sb.append("내 폴더: ").append(if (folders.isEmpty()) "(없음)" else folders.joinToString(" / ")).append("\n\n")
@@ -323,8 +325,9 @@ object Gemini {
             req = listOf("summary", "tags", "folder", "kind", "category", "tips", "star", "transcript")
         ).put("propertyOrdering", JSONArray(listOf(
             // 화면에 먼저 보일 것부터: 받아쓰기 → 정보 → 요약 → 코스 → 꿀팁 → 나머지
-            "transcript", "places", "facts", "summary", "course", "tips", "keyshots", "recipe", "checklist", "events",
-            "tags", "folder", "kind", "category", "star", "desc_ko")))
+            // 받아쓰기는 맨 뒤: 답이 끊겨도(저작권 차단 · 길이) 장소 · 요약은 남게
+            "places", "facts", "summary", "course", "tips", "keyshots", "recipe", "checklist", "events",
+            "tags", "folder", "kind", "category", "star", "desc_ko", "transcript")))
     }
 
     /** 메모 하나 정리. 결과 JSON(ai) 을 돌려준다 */
@@ -342,20 +345,36 @@ object Gemini {
      * tempVideo: 링크만 저장한 인스타 영상을 잠깐 받은 파일 · ytUrl: 유튜브 링크(받지 않고 그대로 넘김)
      * pre: 정리 전에 한 일(영상 잠깐 받기 등) 기록
      */
+    /**
+     * quick: 글만 빠르게 (1단계) · fallback: 영상으로 실패하면 글만으로 한 번 더 (2단계에서는 1단계 결과가 있으니 끔)
+     * 답이 끊기면(저작권 차단 등) 먼저 받아쓰기 빼고 영상으로 한 번 더.
+     */
     fun organize(ctx: Context, item: JSONObject, folders: List<String>, onStage: (String) -> Unit,
                  tempVideo: File? = null, ytUrl: String? = null, pre: List<Triple<String, Long, String>> = emptyList(),
+                 quick: Boolean = false, fallback: Boolean = true,
                  onPartial: ((String) -> Unit)? = null): JSONObject {
         val key = key(ctx)
         if (key.isEmpty()) throw IllegalStateException("Gemini API 키가 없어요 (설정에서 넣어 주세요)")
         cancelled = false
         val log = RunLog(ctx)
         pre.forEach { (step, ms, note) -> log.add(step, ms, note, !note.startsWith("실패")) }
+        if (quick) return try { organizeImpl(ctx, key, item, folders, onStage, log, null, null, onPartial, noVideo = true) }
+            catch (e: Throwable) { throw AiFail(if (cancelled) "중지했어요" else explain(e), log.json(null)) }
         val hasSaved = item.optString("video").isNotEmpty()
+        val video = tempVideo != null || ytUrl != null || hasSaved
         return try { organizeImpl(ctx, key, item, folders, onStage, log, tempVideo, ytUrl, onPartial) }
-        catch (e: Throwable) {
+        catch (e0: Throwable) {
+            var e = e0
             if (cancelled) throw AiFail("중지했어요", log.json(null))
+            // 답이 끊겼으면 → 받아쓰기 빼고 영상으로 한 번 더
+            if (e is CutErr && video) {
+                log.add("받아쓰기 빼고 다시", 0, e.message ?: "", false)
+                onStage("받아쓰기 빼고 다시 정리 중")
+                try { return organizeImpl(ctx, key, item, folders, onStage, log, tempVideo, ytUrl, onPartial, noTranscript = true) }
+                catch (e2: Throwable) { if (cancelled) throw AiFail("중지했어요", log.json(null)); e = e2 }
+            }
             // 영상으로 하다 실패하면 → 글(제목 · 설명 · 댓글)만으로 한 번 더. 키 문제면 그대로 멈춤
-            if (e is KeyBad || (tempVideo == null && ytUrl == null && !hasSaved)) throw AiFail(explain(e), log.json(null))
+            if (e is KeyBad || !video || !fallback) throw AiFail(explain(e), log.json(null))
             log.add("영상 없이 다시", 0, "영상으로 실패: " + explain(e).lineSequence().first().substringBefore(" →"), false)
             onStage("영상 없이 글만으로 다시 정리 중")
             try { organizeImpl(ctx, key, item, folders, onStage, log, null, null, onPartial, noVideo = true).put("noVideo", true) }
@@ -364,11 +383,11 @@ object Gemini {
     }
 
     private fun organizeImpl(ctx: Context, key: String, item: JSONObject, folders: List<String>, onStage: (String) -> Unit, log: RunLog,
-                             tempVideo: File?, ytUrl: String?, onPartial: ((String) -> Unit)?, noVideo: Boolean = false): JSONObject {
+                             tempVideo: File?, ytUrl: String?, onPartial: ((String) -> Unit)?, noVideo: Boolean = false, noTranscript: Boolean = false): JSONObject {
         val parts = JSONArray()
         val vName = item.optString("video")
         val saved = if (vName.isNotEmpty() && !noVideo) File(Store.dir(ctx, item.optString("id")), vName) else null
-        val vFile = (saved?.takeIf { it.exists() } ?: tempVideo?.takeIf { it.exists() })?.takeIf { it.length() < 1_900_000_000L }
+        val vFile = (saved?.takeIf { it.exists() } ?: tempVideo?.takeIf { !noVideo && it.exists() })?.takeIf { it.length() < 1_900_000_000L }
         var withVideo = false
         if (vFile != null) {
             onStage("영상 올리는 중")
@@ -376,13 +395,13 @@ object Gemini {
             val uri = upload(ctx, key, vFile, mime, log)
             parts.put(JSONObject().put("file_data", JSONObject().put("mime_type", mime).put("file_uri", uri)))
             withVideo = true
-        } else if (ytUrl != null) {
+        } else if (ytUrl != null && !noVideo) {
             // 유튜브는 받지 않고 링크를 그대로 넘김 (공개 영상만)
             parts.put(JSONObject().put("file_data", JSONObject().put("file_uri", ytUrl)))
             log.add("유튜브 링크로 보기", 0, ytUrl, true)
             withVideo = true
         }
-        parts.put(JSONObject().put("text", prompt(item, folders, withVideo)))
+        parts.put(JSONObject().put("text", prompt(item, folders, withVideo, noTranscript)))
         val req = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", parts)))
             .put("generationConfig", JSONObject()
@@ -409,7 +428,17 @@ object Gemini {
             ?: throw IllegalStateException("Gemini 가 답을 주지 않았어요: " + (res.optJSONObject("promptFeedback")?.toString() ?: text.take(200)))
         val out = cand.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")
             ?: throw IllegalStateException("답이 비어 있어요 (${cand.optString("finishReason")})")
-        return JSONObject(out.trim().removePrefix("```json").removeSuffix("```").trim())
+        val raw = out.trim().removePrefix("```json").removeSuffix("```").trim()
+        val finish = cand.optString("finishReason")
+        val parsed = try { JSONObject(raw) } catch (_: Exception) {
+            // 끊긴 답: 닫아서 살리기. 요약 · 장소 둘 다 없으면 못 쓴 것으로
+            val fixed = JsonFix.repair(raw)
+            if (fixed == null || (fixed.optJSONArray("summary")?.length() ?: 0) == 0 && (fixed.optJSONArray("places")?.length() ?: 0) == 0)
+                throw CutErr("답이 ${raw.length}자에서 끊겼어요 · " + JsonFix.reason(finish))
+            log.add("끊긴 답 살림", 0, "${raw.length}자 · " + JsonFix.reason(finish), false)
+            fixed.put("cut", JsonFix.reason(finish))
+        }
+        return parsed
             .put("at", System.currentTimeMillis()).put("video", withVideo).put("model", used)
             .put("modelVersion", res.optString("modelVersion")).put("log", log.json(usage).put("modelVersion", res.optString("modelVersion")))
     }
@@ -482,7 +511,7 @@ object Gemini {
     private fun generate(ctx: Context, key: String, req: JSONObject, onStage: (String) -> Unit, log: RunLog, withVideo: Boolean,
                          onPartial: ((String) -> Unit)? = null): Pair<String, String> {
         val tried = StringBuilder()
-        val limit = if (withVideo) 120000 else 40000
+        val limit = if (withVideo) 120000 else 60000
         val models = order(ctx)
         for ((mi, model) in models.withIndex()) {
             val body = JSONObject(req.toString())
