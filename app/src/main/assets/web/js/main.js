@@ -181,6 +181,7 @@ document.addEventListener('click', e => {
 });
 
 $('#btnSettings').onclick = openSettings;
+$('#btnTidy').onclick = openTidy;
 $('#dgGo').onclick = runDiag;
 $('#dgCopy').onclick = () => { A.copy(diagText()); toast('결과를 복사했어요'); };
 $('#dim').onclick = () => { const top = stack[stack.length - 1]; if (top && top.type === 'sheet') closeSheet(top.id); };

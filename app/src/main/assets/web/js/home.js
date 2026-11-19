@@ -223,6 +223,7 @@ function moveTo(fid) {
   A.updateMany ? A.updateMany(JSON.stringify(ids), JSON.stringify({ folder: fid })) : ids.forEach(id => A.update(id, JSON.stringify({ folder: fid })));
   closeSheet('moveSheet');
   toast(fid ? fPath(fid) + '(으)로 옮겼어요' : '폴더에서 뺐어요');
+  if (typeof tidyMoved === 'function' && tidyMoved(fid)) return;
   if (selecting) endSelect(); else renderHome();
   if (cur && $('#detail').classList.contains('open')) renderDetail(false);
 }
