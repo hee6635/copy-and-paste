@@ -6,8 +6,7 @@
   const A = window.Android || devBridge();
 
   let items = [];
-  let filter = '전체';
-  let query = '';
+    let query = '';
   let cur = null;          // 열린 메모 id
   let curTab = 'desc';
   let curCap = null;       // 열린 캡처 id
@@ -22,35 +21,63 @@
   const fmtB = b => b > 1e9 ? (b / 1e9).toFixed(1) + 'GB' : Math.max(0, Math.round(b / 1e6)) + 'MB';
   const byId = id => items.find(x => x.id === id);
 
+  // 폴더(2단계) · 홈 순서: meta = { folders:[{id,name,parent}], order:[id…] }
+  let meta = { folders: [], order: [] };
+  let fTop = '';           // 고른 큰 폴더 id ('' = 전체)
+  let fSub = '';           // 고른 작은 폴더 id ('' = 큰 폴더 전체)
+  let selecting = false;
+  const sel = new Set();
+
   function load() {
     try { items = JSON.parse(A.items()) || []; } catch (e) { items = []; }
+    try { meta = Object.assign({ folders: [], order: [] }, JSON.parse(A.meta ? A.meta() : '{}')); } catch (e) {}
     renderHome();
   }
+  function saveMeta() { A.setMeta && A.setMeta(JSON.stringify(meta)); }
 
-  // ── 홈 ──
-  function allTags() {
-    const set = [];
-    items.forEach(it => (it.tags || []).forEach(t => { if (!set.includes(t)) set.push(t); }));
-    return set;
+  const fById = id => meta.folders.find(f => f.id === id);
+  const tops = () => meta.folders.filter(f => !f.parent);
+  const kids = id => meta.folders.filter(f => f.parent === id);
+  function fPath(id) { const f = fById(id); if (!f) return ''; const p = f.parent && fById(f.parent); return p ? p.name + ' › ' + f.name : f.name; }
+
+  function inFilter(it) {
+    if (!fTop) return true;
+    if (fSub) return it.folder === fSub;
+    const f = fById(it.folder);
+    return it.folder === fTop || (f && f.parent === fTop);
   }
 
   function matches(it) {
-    if (filter !== '전체' && !(it.tags || []).includes(filter)) return false;
+    if (!inFilter(it)) return false;
     if (!query) return true;
     const q = query.toLowerCase();
-    const hay = [it.title, it.author, it.desc, it.body, it.memo, it.url, (it.tags || []).join(' '),
-      (it.comments || []).map(c => c.a + ' ' + c.t).join(' '),
+    const hay = [it.title, it.author, it.desc, it.body, it.memo, it.url, fPath(it.folder), (it.tags || []).join(' '),
+      (it.comments || []).map(c => c.a + ' ' + c.t + ' ' + (c.r || []).map(r => r.t).join(' ')).join(' '),
       (it.captures || []).map(c => c.text + ' ' + c.memo).join(' ')].join(' ').toLowerCase();
     return q.split(/\s+/).every(w => hay.includes(w));
   }
 
+  /** 홈 순서: meta.order 순, 목록에 없는 새 메모는 맨 앞(최근 순) */
+  function sorted(list) {
+    const pos = new Map(meta.order.map((id, i) => [id, i]));
+    const fresh = list.filter(x => !pos.has(x.id)).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const old = list.filter(x => pos.has(x.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id));
+    return fresh.concat(old);
+  }
+
   function renderChips() {
-    const tags = allTags();
-    if (filter !== '전체' && !tags.includes(filter)) filter = '전체';
+    if (fTop && !fById(fTop)) { fTop = ''; fSub = ''; }
+    if (fSub && !fById(fSub)) fSub = '';
     const el = $('#chips');
-    el.classList.toggle('hide', tags.length === 0);
-    el.innerHTML = ['전체'].concat(tags).map(t =>
-      `<button class="pill${t === filter ? ' on' : ''}" data-t="${esc(t)}">${esc(t)}</button>`).join('');
+    const t = tops();
+    el.classList.toggle('hide', t.length === 0);
+    el.innerHTML = `<button class="pill${!fTop ? ' on' : ''}" data-ft="">전체</button>` +
+      t.map(f => `<button class="pill${f.id === fTop ? ' on' : ''}" data-ft="${esc(f.id)}">${esc(f.name)}</button>`).join('');
+    const k = fTop ? kids(fTop) : [];
+    const el2 = $('#chips2');
+    el2.classList.toggle('hide', k.length === 0);
+    el2.innerHTML = k.length ? `<button class="pill sm${!fSub ? ' on' : ''}" data-fs="">모두</button>` +
+      k.map(f => `<button class="pill sm${f.id === fSub ? ' on' : ''}" data-fs="${esc(f.id)}">${esc(f.name)}</button>`).join('') : '';
   }
 
   function jobHtml(it) {
@@ -69,16 +96,18 @@
     const ratio = it.w && it.h ? Math.min(1.78, Math.max(.75, it.h / it.w)) : (it.platform === 'web' ? .62 : 1.35);
     const thumb = it.thumb ? `<div class="th" style="aspect-ratio:1/${ratio.toFixed(3)}"><img loading="lazy" src="${fileUrl(it.id, it.thumb)}" alt="">${it.kind && it.kind !== '웹' ? `<span class="badge">${esc(it.kind)}${it.duration ? ' ' + fmtT(it.duration) : ''}</span>` : ''}</div>` : '';
     const memo = it.memo ? `<div class="cm1">${esc(it.memo)}</div>` : '';
-    const tags = (it.tags || []).slice(0, 2).map(t => `<span class="tag">${esc(t)}</span>`).join('');
-    return `<button class="card" data-id="${esc(it.id)}">${thumb}<div class="cb"><div class="ct">${esc(it.title || it.url)}</div>
-      <div class="cs">${esc(PLAT[it.platform] || '')}${it.author ? ' · ' + esc(it.author) : ''}</div>${memo}${tags}</div></button>`;
+    const folder = it.folder && fById(it.folder) && !fSub ? `<span class="tag">${esc(fById(it.folder).name)}</span>` : '';
+    return `<button class="card${sel.has(it.id) ? ' picked' : ''}" data-id="${esc(it.id)}"><span class="ck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 12.5l4 4 8-9"/></svg></span>${thumb}<div class="cb"><div class="ct">${esc(it.title || it.url)}</div>
+      <div class="cs">${esc(PLAT[it.platform] || '')}${it.author ? ' · ' + esc(it.author) : ''}</div>${memo}${folder}</div></button>`;
   }
+
+  function visible() { return sorted(items.filter(it => it.status === 'done' && matches(it))); }
 
   function renderHome() {
     renderChips();
-    $('#jobs').innerHTML = items.filter(it => it.status === 'saving' || it.status === 'error').map(jobHtml).join('');
-    const list = items.filter(it => it.status === 'done' && matches(it));
-    // 두 줄에 높이가 비슷하게 나누기
+    $('#jobs').innerHTML = selecting ? '' : items.filter(it => it.status === 'saving' || it.status === 'error').map(jobHtml).join('');
+    const list = visible();
+    // 두 줄에 높이가 비슷하게 나누기 (순서대로 왼쪽 · 오른쪽 중 짧은 쪽)
     const cols = [[], []], h = [0, 0];
     list.forEach(it => {
       const est = (it.thumb ? (it.w && it.h ? Math.min(1.78, Math.max(.75, it.h / it.w)) : 1.2) * 170 : 0) + 90 + (it.memo ? 34 : 0);
@@ -88,7 +117,166 @@
     colsEl[0].innerHTML = cols[0].map(cardHtml).join('');
     colsEl[1].innerHTML = cols[1].map(cardHtml).join('');
     $('#empty').classList.toggle('hide', items.length > 0 || !!query);
+    document.body.classList.toggle('selecting', selecting);
+    $('#selCount').textContent = sel.size + '개 선택';
+    $('#selBar').querySelectorAll('button').forEach(b => { if (b.id !== 'sOrder') b.disabled = sel.size === 0; });
   }
+
+  // ── 여러 개 고르기 ──
+  function startSelect(id) {
+    if (selecting) return;
+    selecting = true; sel.clear(); if (id) sel.add(id);
+    stack.push({ type: 'mode', id: 'select' });
+    renderHome();
+  }
+  function endSelect() {
+    selecting = false; sel.clear();
+    const i = stack.findIndex(s => s.type === 'mode'); if (i >= 0) stack.splice(i, 1);
+    renderHome();
+  }
+  function toggleSel(id) {
+    if (sel.has(id)) sel.delete(id); else sel.add(id);
+    const c = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`); if (c) c.classList.toggle('picked', sel.has(id));
+    $('#selCount').textContent = sel.size + '개 선택';
+    $('#selBar').querySelectorAll('button').forEach(b => { if (b.id !== 'sOrder') b.disabled = sel.size === 0; });
+  }
+
+  // 꾹 누르기 (0.45초)
+  let lpT = 0, lpX = 0, lpY = 0, lpFired = false;
+  document.addEventListener('pointerdown', e => {
+    const c = e.target.closest('.card'); const ch = e.target.closest('[data-ft],[data-fs]');
+    lpFired = false;
+    if (!c && !(ch && (ch.dataset.ft || ch.dataset.fs))) return;
+    lpX = e.clientX; lpY = e.clientY;
+    clearTimeout(lpT);
+    lpT = setTimeout(() => {
+      lpFired = true;
+      if (c) { if (!selecting) startSelect(c.dataset.id); else toggleSel(c.dataset.id); }
+      else folderOptions(ch.dataset.ft || ch.dataset.fs);
+    }, 450);
+  });
+  document.addEventListener('pointermove', e => { if (Math.abs(e.clientX - lpX) + Math.abs(e.clientY - lpY) > 12) clearTimeout(lpT); });
+  document.addEventListener('pointerup', () => clearTimeout(lpT));
+  document.addEventListener('pointercancel', () => clearTimeout(lpT));
+  document.addEventListener('contextmenu', e => { if (e.target.closest('.card,.pill')) e.preventDefault(); });
+
+  // ── 폴더 고르기 창 (옮기기) ──
+  let moveIds = [];
+  function openMove(ids) {
+    moveIds = ids;
+    renderMove();
+    openSheet('moveSheet');
+  }
+  function renderMove() {
+    const cur1 = moveIds.length === 1 ? (byId(moveIds[0]) || {}).folder : null;
+    const row = (f, sub) => `<div class="frow${sub ? ' sub' : ''}"><button class="fpick${cur1 === f.id ? ' on' : ''}" data-mv="${esc(f.id)}"><span class="ficon">${sub ? '' : '<svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'}</span>${esc(f.name)}</button>${sub ? '' : `<button class="ib fadd" data-fnew="${esc(f.id)}" aria-label="${esc(f.name)} 안에 폴더 만들기"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`}</div>`;
+    $('#mvList').innerHTML = `<div class="frow"><button class="fpick${cur1 === '' || cur1 === undefined && moveIds.length === 1 ? ' on' : ''}" data-mv=""><span class="ficon"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M7 17L17 7"/></svg></span>폴더 없음</button></div>` +
+      tops().map(f => row(f, false) + kids(f.id).map(k => row(k, true)).join('')).join('');
+    $('#mvTitle').textContent = moveIds.length > 1 ? moveIds.length + '개를 옮길 폴더' : '폴더';
+  }
+  function moveTo(fid) {
+    const ids = moveIds.slice();
+    ids.forEach(id => { const it = byId(id); if (it) it.folder = fid; });
+    A.updateMany ? A.updateMany(JSON.stringify(ids), JSON.stringify({ folder: fid })) : ids.forEach(id => A.update(id, JSON.stringify({ folder: fid })));
+    closeSheet('moveSheet');
+    toast(fid ? fPath(fid) + '(으)로 옮겼어요' : '폴더에서 뺐어요');
+    if (selecting) endSelect(); else renderHome();
+    if (cur && $('#detail').classList.contains('open')) renderDetail(false);
+  }
+  function newFolder(parent) {
+    ask(parent ? fById(parent).name + ' 안에 새 폴더' : '새 폴더', '폴더 이름', v => {
+      v = v.trim(); if (!v) return;
+      const f = { id: 'f' + Date.now().toString(36), name: v.slice(0, 20), parent: parent || null };
+      meta.folders.push(f); saveMeta();
+      renderChips();
+      if (moveIds.length) setTimeout(() => moveTo(f.id), 50);
+    });
+  }
+  function folderOptions(fid) {
+    const f = fById(fid); if (!f) return;
+    optSheet(fPath(fid), [
+      ['이름 바꾸기', () => ask('폴더 이름 바꾸기', '폴더 이름', v => { v = v.trim(); if (v) { f.name = v.slice(0, 20); saveMeta(); renderHome(); } }, f.name)],
+      ...(!f.parent ? [['안에 폴더 만들기', () => { moveIds = []; newFolder(f.id); }]] : []),
+      ['앞으로', () => { const i = meta.folders.indexOf(f); const prev = meta.folders.slice(0, i).reverse().find(x => (x.parent || null) === (f.parent || null)); if (prev) { meta.folders.splice(i, 1); meta.folders.splice(meta.folders.indexOf(prev), 0, f); saveMeta(); renderChips(); } }],
+      ['폴더 지우기', () => confirmAsk(f.name + ' 폴더를 지울까요? (안의 메모는 남아요)', '지우기', () => {
+        const gone = [f.id].concat(kids(f.id).map(k => k.id));
+        const to = f.parent || '';
+        const ids = items.filter(it => gone.includes(it.folder)).map(it => it.id);
+        ids.forEach(id => byId(id).folder = to);
+        if (ids.length) A.updateMany(JSON.stringify(ids), JSON.stringify({ folder: to }));
+        meta.folders = meta.folders.filter(x => !gone.includes(x.id)); saveMeta();
+        if (gone.includes(fTop)) { fTop = ''; fSub = ''; } if (gone.includes(fSub)) fSub = '';
+        renderHome();
+      }), 'danger'],
+    ]);
+  }
+
+  // 고르는 창 (여러 줄)
+  function optSheet(title, rows) {
+    $('#optTitle').textContent = title;
+    $('#optList').innerHTML = rows.map((r, i) => `<button class="orow${r[2] ? ' ' + r[2] : ''}" data-opt="${i}">${esc(r[0])}</button>`).join('');
+    optRows = rows;
+    openSheet('optSheet');
+  }
+  let optRows = [];
+
+  // ── 순서 바꾸기 ──
+  let ordList = [];
+  function openOrder() {
+    ordList = visible().map(it => it.id);
+    renderOrder();
+    openPage('order');
+  }
+  function renderOrder() {
+    $('#ordList').innerHTML = ordList.map(id => { const it = byId(id); return `<div class="orow2" data-oid="${esc(id)}">
+      <div class="ot">${it.thumb ? `<img src="${fileUrl(id, it.thumb)}" alt="">` : platIcon(it.platform)}</div>
+      <div class="ob"><b>${esc(it.title || it.url)}</b><span>${esc(fPath(it.folder) || PLAT[it.platform] || '')}</span></div>
+      <div class="grip" aria-label="끌어서 옮기기"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg></div></div>`; }).join('');
+  }
+  function saveOrder() {
+    // 지금 보이는 것들의 자리(전체 순서 안)는 그대로 두고, 그 자리들에 새 순서로 채움
+    const full = sorted(items.filter(it => it.status === 'done')).map(it => it.id);
+    const setV = new Set(ordList);
+    const slots = []; full.forEach((id, i) => { if (setV.has(id)) slots.push(i); });
+    slots.forEach((slot, k) => { full[slot] = ordList[k]; });
+    meta.order = full; saveMeta();
+    renderHome();
+  }
+  (function dragSetup() {
+    let drag = null;
+    document.addEventListener('pointerdown', e => {
+      const g = e.target.closest('.grip'); if (!g) return;
+      const row = g.closest('.orow2'); const list = $('#ordList');
+      const rows = [...list.children]; const h = row.offsetHeight + 8;
+      drag = { row, rows, h, from: rows.indexOf(row), to: rows.indexOf(row), y0: e.clientY };
+      row.classList.add('drag'); g.setPointerCapture(e.pointerId); e.preventDefault();
+    });
+    document.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const dy = e.clientY - drag.y0;
+      drag.row.style.transform = `translateY(${dy}px) scale(1.02)`;
+      const to = Math.max(0, Math.min(drag.rows.length - 1, drag.from + Math.round(dy / drag.h)));
+      if (to !== drag.to) {
+        drag.to = to;
+        drag.rows.forEach((r, i) => {
+          if (r === drag.row) return;
+          let shift = 0;
+          if (drag.from < to && i > drag.from && i <= to) shift = -drag.h;
+          if (drag.from > to && i < drag.from && i >= to) shift = drag.h;
+          r.style.transform = shift ? `translateY(${shift}px)` : '';
+        });
+      }
+    });
+    const end = () => {
+      if (!drag) return;
+      const d = drag; drag = null;
+      const id = ordList.splice(d.from, 1)[0]; ordList.splice(d.to, 0, id);
+      d.row.style.transform = `translateY(${(d.to - d.from) * d.h}px)`;
+      setTimeout(() => { renderOrder(); }, 180);
+    };
+    document.addEventListener('pointerup', end);
+    document.addEventListener('pointercancel', end);
+  })();
 
   function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return u; } }
   function platIcon(p) {
@@ -126,7 +314,7 @@
   function closeTop() {
     const top = stack[stack.length - 1];
     if (!top) return false;
-    if (top.type === 'sheet') closeSheet(top.id); else closePage(top.id);
+    if (top.type === 'sheet') closeSheet(top.id); else if (top.type === 'mode') endSelect(); else closePage(top.id);
     return true;
   }
 
@@ -197,6 +385,7 @@
     }
     sc.querySelector('.meta').innerHTML = `<div class="s">${esc(PLAT[it.platform] || '')}${it.author ? ' · ' + esc(it.author) : ''} · ${fmtD(it.createdAt)}</div>
       <h2>${esc(it.title || it.url)}</h2>
+      <button class="fchip" id="dFolder"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>${esc(fPath(it.folder) || '폴더 없음')}<svg class="ic chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
       <div class="tags">${(it.tags || []).map(t => `<button class="tg" data-tag="${esc(t)}">#${esc(t)}</button>`).join('')}
       <button class="add" id="dAddTag" aria-label="태그 추가"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>`;
     renderCaps(it);
@@ -369,8 +558,8 @@
 
   // ── 작은 창 ──
   let askCb = null;
-  function ask(title, label, cb) {
-    askCb = cb; $('#askTitle').textContent = title; $('#askLabel').textContent = label; $('#askInput').value = '';
+  function ask(title, label, cb, val) {
+    askCb = cb; $('#askTitle').textContent = title; $('#askLabel').textContent = label; $('#askInput').value = val || '';
     openSheet('askSheet'); setTimeout(() => $('#askInput').focus(), 350);
   }
   let cfCb = null;
@@ -424,8 +613,24 @@
   // ── 누르기 ──
   document.addEventListener('click', e => {
     const t = e.target;
-    const card = t.closest('.card'); if (card) return openDetail(card.dataset.id);
-    const pill = t.closest('.pill'); if (pill) { filter = pill.dataset.t; renderHome(); return; }
+    if (lpFired) { lpFired = false; return; }
+    const card = t.closest('.card'); if (card) return selecting ? toggleSel(card.dataset.id) : openDetail(card.dataset.id);
+    const ft = t.closest('[data-ft]'); if (ft) { fTop = ft.dataset.ft; fSub = ''; renderHome(); return; }
+    const fs = t.closest('[data-fs]'); if (fs) { fSub = fs.dataset.fs; renderHome(); return; }
+    const mv = t.closest('[data-mv]'); if (mv) return moveTo(mv.dataset.mv);
+    const fn = t.closest('[data-fnew]'); if (fn) return newFolder(fn.dataset.fnew);
+    if (t.closest('#mvNew')) return newFolder(null);
+    const op = t.closest('[data-opt]'); if (op) { const r = optRows[+op.dataset.opt]; closeSheet('optSheet'); setTimeout(() => r && r[1](), 250); return; }
+    if (t.closest('#selX')) return endSelect();
+    if (t.closest('#selAll')) { const v = visible(); if (sel.size === v.length) sel.clear(); else v.forEach(it => sel.add(it.id)); renderHome(); return; }
+    if (t.closest('#sMove')) return openMove([...sel]);
+    if (t.closest('#sOrder')) return openOrder();
+    if (t.closest('#sDel')) return confirmAsk(sel.size + '개를 지울까요?', '지우기', () => {
+      const ids = [...sel]; A.removeMany(JSON.stringify(ids)); items = items.filter(x => !ids.includes(x.id));
+      meta.order = meta.order.filter(id => !ids.includes(id)); saveMeta(); endSelect(); toast(ids.length + '개를 지웠어요');
+    });
+    if (t.closest('#ordDone')) { saveOrder(); closePage('order'); if (selecting) endSelect(); toast('순서를 바꿨어요'); return; }
+    if (t.closest('#dFolder')) return openMove([cur]);
     const dg = t.closest('[data-diag]'); if (dg) { const it = byId(dg.dataset.diag); return openDiag(it ? it.url : '', it, true); }
     if (t.closest('[data-refetch]')) { const it = byId(cur); if (it) { it.commentBusy = true; renderTabs(it); A.refetchComments(cur); } return; }
     const ec = t.closest('[data-errcopy]'); if (ec) { const it = byId(ec.dataset.errcopy); A.copy((it.url || '') + '\n' + (it.errorDetail || it.error || '')); toast('오류 내용을 복사했어요'); return; }
@@ -489,10 +694,20 @@
 
   $('#aOpen').onclick = () => { const it = byId(cur); if (it) A.open(it.url); };
   $('#aSave').onclick = () => { const it = byId(cur); if (it && it.video) { A.exportFile(it.id, it.video); toast('갤러리에 저장하는 중…'); } };
-  $('#aCopy').onclick = () => { const it = byId(cur); if (it) { A.copy(itemText(it)); toast('복사했어요'); } };
+  $('#aCopy').onclick = () => {
+    const it = byId(cur); if (!it) return;
+    const done = (txt, what) => { A.copy(txt); toast(what + ' 복사했어요'); };
+    const rows = [['전체', () => done(itemText(it), '전체를')]];
+    if (it.desc) rows.push(['설명', () => done(it.desc, '설명을')]);
+    if (it.body) rows.push(['본문', () => done(it.body, '본문을')]);
+    if ((it.comments || []).length) rows.push(['댓글', () => done(it.comments.map((c, i) => (i + 1) + '. @' + c.a + ' ' + c.t + (c.r || []).map(r => '\n   ↳ @' + r.a + (r.own ? ' [작성자]' : '') + ' ' + r.t).join('')).join('\n'), '댓글을')]);
+    if (it.memo) rows.push(['내 메모', () => done(it.memo, '메모를')]);
+    rows.push(['링크', () => done(it.url, '링크를')]);
+    optSheet('복사', rows);
+  };
   $('#aTxt').onclick = () => { const it = byId(cur); if (it) A.shareText(it.title || 'memo', itemText(it)); };
   $('#aDel').onclick = () => confirmAsk('이 메모를 지울까요?', '지우기', () => {
-    const id = cur; closePage('detail'); A.remove(id); items = items.filter(x => x.id !== id); renderHome();
+    const id = cur; closePage('detail'); A.remove(id); items = items.filter(x => x.id !== id); meta.order = meta.order.filter(x => x !== id); saveMeta(); renderHome();
   });
 
   $('#cGallery').onclick = () => { const it = byId(cur); const c = it && it.captures.find(x => x.id === curCap); if (c) A.exportFile(it.id, c.file); };
@@ -525,7 +740,9 @@
       update: () => '', remove: () => {}, retry: () => {}, capture: () => '', removeCapture: () => '',
       open: () => {}, copy: () => {}, shareText: () => {}, exportFile: () => {},
       settings: () => JSON.stringify({ quality: '720', igLogin: false, used: 1.2e9, tool: '2026.11.01', app: '0.1' }),
-      setQuality: () => {}, refetchComments: () => {},
+      setQuality: () => {}, refetchComments: () => {}, removeMany: () => {}, updateMany: () => {},
+      meta: () => localStorage.meta || JSON.stringify({ folders: [{ id: 'f1', name: '여행', parent: null }, { id: 'f2', name: '나트랑', parent: 'f1' }, { id: 'f3', name: '디자인', parent: null }], order: [] }),
+      setMeta: (j) => { localStorage.meta = j; },
       diag: (u) => { const st = [['링크 종류', 'ok', '인스타 · 게시물 abc'], ['인터넷 연결', 'ok', '응답 200'], ['인스타 로그인', 'ok', '로그인됨'], ['내용 읽기 (yt-dlp)', 'ok', '제목 ✓ · 설명 320자'], ['댓글 가져오기', 'fail', '[화면] HTTP 403']];
         st.forEach((x, i) => setTimeout(() => App.onDiag(JSON.stringify({ i, name: x[0], state: x[1], msg: x[2], detail: x[1] === 'fail' ? '[화면] HTTP 403 {"message":"login_required"}' : '' })), 150 * i));
         setTimeout(() => App.onDiag('{"end":true}'), 900); }, igLogin: () => {}, igLogout: () => {}, deleteVideos: () => {}, updateTool: () => {}, toast: () => {},
