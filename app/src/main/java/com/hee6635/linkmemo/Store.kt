@@ -119,6 +119,18 @@ object Store {
         tmp.writeText(json); tmp.renameTo(f)
     }
 
+    /** 앱이 꺼져서 멈춘 "처리 중" 표시 정리 */
+    fun fixStale(ctx: Context) = synchronized(lock) {
+        val arr = load(ctx); var changed = false
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            if (o.has("aiBusy")) { o.remove("aiBusy"); o.remove("aiBusyAt"); o.put("aiError", "중단됐어요 (정리 중에 앱이 꺼졌어요)"); changed = true }
+            if (o.optString("status") == "saving") { o.put("status", "error"); o.put("error", "중단됐어요 (저장 중에 앱이 꺼졌어요)"); o.remove("stage"); changed = true }
+            if (o.has("commentBusy")) { o.remove("commentBusy"); changed = true }
+        }
+        if (changed) save(ctx, arr)
+    }
+
     fun usedBytes(ctx: Context): Long = itemsRoot(ctx).walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
     /** 영상 파일만 지우기 (메모 · 썸네일 · 캡처는 남김) */

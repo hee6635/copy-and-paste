@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (!SaveService.alive) Store.fixStale(this)
         web = WebView(this)
         setContentView(web)
         ViewCompat.setOnApplyWindowInsetsListener(web) { v, insets ->
@@ -288,6 +289,7 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun setGeminiKey(k: String) = Gemini.setKey(ctx, k)
         @JavascriptInterface fun setAiOn(v: Boolean) = Gemini.setOn(ctx, v)
         @JavascriptInterface fun aiRedo(id: String) = SaveService.start(ctx, id, "ai")
+        @JavascriptInterface fun aiCancel() = Gemini.cancel()
 
         @JavascriptInterface fun igLogin() = startActivity(Intent(ctx, LoginActivity::class.java))
 

@@ -11,8 +11,8 @@ android {
         applicationId = "com.hee6635.linkmemo"
         minSdk = 29
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6"
+        versionCode = 7
+        versionName = "0.7"
         // 영상 도구(yt-dlp · ffmpeg)가 크기 때문에 요즘 폰용(arm64)만 넣음
         ndk { abiFilters += listOf("arm64-v8a") }
     }

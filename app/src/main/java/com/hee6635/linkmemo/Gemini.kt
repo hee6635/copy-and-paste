@@ -20,6 +20,50 @@ object Gemini {
     val MODELS = listOf("gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest")
 
     class HttpErr(val code: Int, msg: String) : IllegalStateException(msg)
+    /** 실패해도 기록(log)은 남김 */
+    class AiFail(msg: String, val log: JSONObject) : IllegalStateException(msg)
+
+    fun label(m: String) = when (m) { "gemini-flash-latest" -> "최신 flash"; "gemini-2.5-flash" -> "2.5 flash"; "gemini-flash-lite-latest" -> "flash-lite"; else -> m }
+
+    // 중지: 지금 연결을 끊어서 기다림을 바로 끝냄
+    @Volatile private var cancelled = false
+    @Volatile private var current: HttpURLConnection? = null
+    fun cancel() { cancelled = true; Thread { try { current?.disconnect() } catch (_: Throwable) {} }.start() }
+    private fun checkCancel() { if (cancelled) throw IllegalStateException("중지했어요") }
+
+    /** 이번 정리 기록: 단계마다 걸린 시간 · 결과 */
+    class RunLog {
+        val t0 = System.currentTimeMillis()
+        val rows = JSONArray()
+        fun add(step: String, ms: Long, note: String, ok: Boolean) {
+            rows.put(JSONObject().put("step", step).put("ms", ms).put("note", note).put("ok", ok))
+        }
+        fun json(usage: JSONObject?, extraWhy: List<String> = emptyList()): JSONObject {
+            val total = System.currentTimeMillis() - t0
+            val why = mutableListOf<String>()
+            var upload = 0L; var wait = 0L; var fails = 0; var genOk = 0L
+            for (i in 0 until rows.length()) {
+                val r = rows.getJSONObject(i)
+                when {
+                    r.optString("step") == "영상 올리기" -> upload += r.optLong("ms")
+                    r.optString("step") == "영상 처리 대기" -> wait += r.optLong("ms")
+                    !r.optBoolean("ok") -> fails++
+                    else -> genOk += r.optLong("ms")
+                }
+            }
+            if (upload > 15000) why += "영상 올리기가 ${upload / 1000}초 (영상이 크거나 인터넷이 느림)"
+            if (wait > 15000) why += "구글이 영상을 준비하는 데 ${wait / 1000}초"
+            if (fails > 0) why += "실패 ${fails}번 → 다시 시도 · 다른 모델로 넘어감"
+            val thoughts = usage?.optInt("thoughtsTokenCount") ?: 0
+            val outTok = usage?.optInt("candidatesTokenCount") ?: 0
+            if (thoughts > outTok && thoughts > 500) why += "AI가 답하기 전에 오래 생각함 (생각 ${thoughts} · 답 ${outTok} 토큰)"
+            val vidTok = usage?.optInt("videoTokens") ?: 0
+            if (vidTok > 5000) why += "영상이 길어서 볼 양이 많음 (영상 ${vidTok} 토큰)"
+            if (genOk > 60000 && why.isEmpty()) why += "모델 응답 자체가 ${genOk / 1000}초 걸림 (서버 혼잡 가능)"
+            why += extraWhy
+            return JSONObject().put("total", total).put("rows", rows).put("usage", usage ?: JSONObject()).put("why", JSONArray(why))
+        }
+    }
 
     /** 오류를 쉬운 말로 (원인 후보 포함) */
     fun explain(e: Throwable): String {
@@ -48,7 +92,9 @@ object Gemini {
 
     private fun http(method: String, url: String, key: String, body: ByteArray?, headers: Map<String, String> = emptyMap(),
                      timeout: Int = 120000): Pair<HttpURLConnection, String> {
+        checkCancel()
         val c = URL(url).openConnection() as HttpURLConnection
+        current = c
         c.requestMethod = method
         c.connectTimeout = 20000; c.readTimeout = timeout
         c.setRequestProperty("x-goog-api-key", key)
@@ -73,7 +119,8 @@ object Gemini {
     }
 
     /** 영상 올리기 (Files API, 이어 올리기 방식) → file uri */
-    private fun upload(ctx: Context, key: String, f: File, mime: String): String {
+    private fun upload(ctx: Context, key: String, f: File, mime: String, log: RunLog? = null): String {
+        val tUp = System.currentTimeMillis()
         val start = JSONObject().put("file", JSONObject().put("display_name", f.name)).toString().toByteArray()
         val (c1, _) = http("POST", "$BASE/upload/v1beta/files", key, start, mapOf(
             "X-Goog-Upload-Protocol" to "resumable",
@@ -88,9 +135,12 @@ object Gemini {
         c.setFixedLengthStreamingMode(f.length())
         c.setRequestProperty("X-Goog-Upload-Offset", "0")
         c.setRequestProperty("X-Goog-Upload-Command", "upload, finalize")
+        current = c
         c.outputStream.use { out -> f.inputStream().use { it.copyTo(out) } }
         if (c.responseCode !in 200..299) throw IllegalStateException("영상 올리기 실패 ${c.responseCode}")
         val file = JSONObject(c.inputStream.bufferedReader().readText()).getJSONObject("file")
+        log?.add("영상 올리기", System.currentTimeMillis() - tUp, String.format(java.util.Locale.US, "%.1fMB", f.length() / 1e6), true)
+        val tWait = System.currentTimeMillis()
         val name = file.getString("name")
         var state = file.optString("state")
         var uri = file.optString("uri")
@@ -100,6 +150,7 @@ object Gemini {
             val (_, t) = http("GET", "$BASE/v1beta/$name", key, null)
             val j = JSONObject(t); state = j.optString("state"); uri = j.optString("uri")
         }
+        log?.add("영상 처리 대기", System.currentTimeMillis() - tWait, "확인 ${tries}번", state != "FAILED")
         if (state == "FAILED") throw IllegalStateException("Gemini 가 영상을 읽지 못했어요")
         return uri
     }
@@ -165,13 +216,20 @@ object Gemini {
     fun organize(ctx: Context, item: JSONObject, folders: List<String>, onStage: (String) -> Unit): JSONObject {
         val key = key(ctx)
         if (key.isEmpty()) throw IllegalStateException("Gemini API 키가 없어요 (설정에서 넣어 주세요)")
+        cancelled = false
+        val log = RunLog()
+        return try { organizeImpl(ctx, key, item, folders, onStage, log) }
+        catch (e: Throwable) { throw AiFail(if (cancelled) "중지했어요" else explain(e), log.json(null)) }
+    }
+
+    private fun organizeImpl(ctx: Context, key: String, item: JSONObject, folders: List<String>, onStage: (String) -> Unit, log: RunLog): JSONObject {
         val parts = JSONArray()
         val vName = item.optString("video")
         val vFile = if (vName.isNotEmpty()) File(Store.dir(ctx, item.optString("id")), vName) else null
         val withVideo = vFile != null && vFile.exists() && vFile.length() < 1_900_000_000L
         if (withVideo) {
             onStage("영상 올리는 중")
-            val uri = upload(ctx, key, vFile!!, if (vName.endsWith(".webm")) "video/webm" else "video/mp4")
+            val uri = upload(ctx, key, vFile!!, if (vName.endsWith(".webm")) "video/webm" else "video/mp4", log)
             parts.put(JSONObject().put("file_data", JSONObject().put("mime_type", if (vName.endsWith(".webm")) "video/webm" else "video/mp4").put("file_uri", uri)))
         }
         parts.put(JSONObject().put("text", prompt(item, folders, withVideo)))
@@ -182,35 +240,60 @@ object Gemini {
                 .put("responseSchema", schema())
                 .put("temperature", 0.3))
         onStage(if (withVideo) "받아쓰는 중" else "정리 중")
-        val (text, used) = generate(key, req, onStage)
+        val (text, used) = generate(key, req, onStage, log)
         count(ctx)
         val res = JSONObject(text)
+        val um = res.optJSONObject("usageMetadata")
+        val usage = JSONObject()
+        if (um != null) {
+            listOf("promptTokenCount", "candidatesTokenCount", "thoughtsTokenCount", "totalTokenCount").forEach { usage.put(it, um.optInt(it)) }
+            val det = um.optJSONArray("promptTokensDetails")
+            if (det != null) for (i in 0 until det.length()) {
+                val d = det.getJSONObject(i)
+                when (d.optString("modality")) { "VIDEO" -> usage.put("videoTokens", d.optInt("tokenCount")); "AUDIO" -> usage.put("audioTokens", d.optInt("tokenCount")) }
+            }
+        }
         val cand = res.optJSONArray("candidates")?.optJSONObject(0)
             ?: throw IllegalStateException("Gemini 가 답을 주지 않았어요: " + (res.optJSONObject("promptFeedback")?.toString() ?: text.take(200)))
         val out = cand.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")
             ?: throw IllegalStateException("답이 비어 있어요 (${cand.optString("finishReason")})")
         return JSONObject(out.trim().removePrefix("```json").removeSuffix("```").trim())
-            .put("at", System.currentTimeMillis()).put("video", withVideo).put("model", used)
+            .put("at", System.currentTimeMillis()).put("video", withVideo).put("model", used).put("log", log.json(usage))
     }
 
     /** 모델마다 최대 3번(2초 · 5초 쉬고), 바쁘거나 끊기면 다음 모델로. 키 문제(400/401/403)는 바로 멈춤 */
-    private fun generate(key: String, req: JSONObject, onStage: (String) -> Unit): Pair<String, String> {
+    private fun generate(key: String, req: JSONObject, onStage: (String) -> Unit, log: RunLog): Pair<String, String> {
         val tried = StringBuilder()
-        for (model in MODELS) {
+        for ((mi, model) in MODELS.withIndex()) {
             for (attempt in 0 until 3) {
+                checkCancel()
+                onStage("${label(model)}로 정리 중" + if (attempt > 0) " (${attempt + 1}번째)" else "")
+                val t0 = System.currentTimeMillis()
                 try {
                     val (_, t) = http("POST", "$BASE/v1beta/models/$model:generateContent", key,
                         req.toString().toByteArray(), mapOf("Content-Type" to "application/json"), 300000)
+                    log.add("${label(model)} #${attempt + 1}", System.currentTimeMillis() - t0, "성공", true)
                     return t to model
                 } catch (e: Throwable) {
-                    tried.append("$model #${attempt + 1}: ${explain(e)}\n")
+                    if (cancelled) throw e
+                    val why = explain(e)
+                    val short = why.substringBefore(" →")
+                    log.add("${label(model)} #${attempt + 1}", System.currentTimeMillis() - t0, why, false)
+                    tried.append("${label(model)} #${attempt + 1}: $why\n")
                     if (e is HttpErr && e.code in listOf(400, 401, 403)) throw IllegalStateException(tried.toString().trim())
-                    if (e is HttpErr && (e.code == 404 || e.code == 429)) break   // 이 모델은 건너뛰기
-                    if (attempt < 2) { onStage("다시 시도 중"); Thread.sleep(if (attempt == 0) 2000 else 5000) }
+                    val skipModel = e is HttpErr && (e.code == 404 || e.code == 429)
+                    val next = MODELS.getOrNull(mi + 1)
+                    if (attempt < 2 && !skipModel) {
+                        onStage("${label(model)} 안 됨 ($short) → 같은 모델로 다시 시도")
+                        Thread.sleep(if (attempt == 0) 2000 else 5000)
+                    } else {
+                        if (next != null) onStage("${label(model)} 안 됨 ($short) → ${label(next)}로 바꿔서 시도")
+                        break
+                    }
                 }
             }
         }
-        throw IllegalStateException(tried.toString().trim())
+        throw IllegalStateException("모두 안 됨\n" + tried.toString().trim())
     }
 
     // ── 검사용 ──

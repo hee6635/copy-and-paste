@@ -66,6 +66,7 @@ class SaveService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        alive = true
         startAsForeground("저장 준비 중")
         val id = intent?.getStringExtra("id")
         if (id == null) { stopIfIdle(); return START_NOT_STICKY }
@@ -187,7 +188,7 @@ class SaveService : Service() {
             return
         }
         val item = Store.get(this, id) ?: return
-        emit(Store.patch(this, id) { it.put("aiBusy", "AI 정리 중"); it.remove("aiError") })
+        emit(Store.patch(this, id) { it.put("aiBusy", "AI 정리 준비 중"); it.put("aiBusyAt", System.currentTimeMillis()); it.remove("aiError"); it.remove("aiLog") })
         updateNotif("AI 정리 중")
         try {
             val ai = Gemini.organize(this, item, folderPaths()) { st ->
@@ -207,10 +208,14 @@ class SaveService : Service() {
                     for (i in 0 until cs.length()) cs.getJSONObject(i).remove("star")
                     if (star != null) for (i in 0 until star.length()) cs.optJSONObject(star.optInt(i, -1))?.put("star", true)
                 }
-                o.remove("aiBusy"); o.remove("aiError")
+                o.remove("aiBusy"); o.remove("aiBusyAt"); o.remove("aiError"); o.remove("aiLog")
             })
         } catch (e: Throwable) {
-            emit(Store.patch(this, id) { it.remove("aiBusy"); it.put("aiError", Gemini.explain(e)) })
+            emit(Store.patch(this, id) {
+                it.remove("aiBusy"); it.remove("aiBusyAt")
+                it.put("aiError", if (e is Gemini.AiFail) (e.message ?: "") else Gemini.explain(e))
+                if (e is Gemini.AiFail) it.put("aiLog", e.log)
+            })
         }
     }
 
@@ -453,10 +458,11 @@ class SaveService : Service() {
         })
     }
 
-    override fun onDestroy() { scope.coroutineContext[kotlinx.coroutines.Job]?.cancel(); super.onDestroy() }
+    override fun onDestroy() { alive = false; scope.coroutineContext[kotlinx.coroutines.Job]?.cancel(); super.onDestroy() }
 
     companion object {
         const val CH = "save"
+        @Volatile var alive = false
         const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36"
 
         fun platformOf(url: String): String {
