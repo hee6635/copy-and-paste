@@ -300,6 +300,20 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface fun toast(msg: String) = this@MainActivity.toast(msg)
+
+        /** 검사: 단계마다 App.onDiag(결과) */
+        @JavascriptInterface fun diag(url: String) {
+            thread {
+                try {
+                    Diag.run(ctx, url) { o -> js("App.onDiag(${JSONObject.quote(o.toString())})") }
+                } catch (e: Throwable) {
+                    js("App.onDiag(${JSONObject.quote(JSONObject().put("end", true).put("error", e.toString()).toString())})")
+                }
+            }
+        }
+
+        /** 이미 저장한 메모의 댓글만 다시 가져오기 */
+        @JavascriptInterface fun refetchComments(id: String) = SaveService.start(ctx, id, "comments")
     }
 
     private fun ocr(id: String, capId: String, file: File) {

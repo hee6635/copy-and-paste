@@ -70,6 +70,24 @@
   <div class="scroll" id="sScroll"></div>
 </section>
 
+<!-- 검사 -->
+<section id="diag" class="page sub" aria-hidden="true">
+  <header class="top c">
+    <button class="ib" data-back aria-label="뒤로"><svg class="ic" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <div class="t">검사</div><div class="ib"></div>
+  </header>
+  <div class="scroll">
+    <div class="sec" style="margin-top:4px">
+      <label class="field" style="margin-top:0"><input id="dgUrl" type="url" placeholder=" " autocomplete="off"><span>검사할 링크</span></label>
+    </div>
+    <div class="group steps" id="dgSteps"></div>
+  </div>
+  <div class="dock solid"><div class="inrow">
+    <button class="inp btn" id="dgCopy">결과 복사</button>
+    <button class="send on" id="dgGo" aria-label="검사 시작"><i></i><svg class="ic" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+  </div></div>
+</section>
+
 <div id="dim" class="dim"></div>
 
 <!-- 저장 창 -->

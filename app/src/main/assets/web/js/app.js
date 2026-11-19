@@ -61,7 +61,7 @@
       <div class="jt">${platIcon(it.platform)}</div>
       <div class="jb"><div class="jh"><b>${esc(err ? host : (it.stage || '저장 중'))}</b><span>${err ? esc(it.error || '실패') : p + '%'}</span></div>
       ${err ? '' : `<div class="bar"><i style="transform:scaleX(${p / 100})"></i></div>`}</div>
-      ${err ? `<div class="jbtns"><button class="jbtn" data-errcopy="${esc(it.id)}">오류 복사</button><button class="jbtn" data-del="${esc(it.id)}">지우기</button><button class="jbtn dark" data-retry="${esc(it.id)}">다시</button></div>` : ''}
+      ${err ? `<div class="jbtns"><button class="jbtn" data-diag="${esc(it.id)}">원인 검사</button><button class="jbtn" data-del="${esc(it.id)}">지우기</button><button class="jbtn dark" data-retry="${esc(it.id)}">다시</button></div>` : ''}
     </div>`;
   }
 
@@ -229,9 +229,12 @@
       body = (it.desc ? `<p class="p" style="color:var(--sub);margin-bottom:12px">${esc(it.desc)}</p>` : '') + (it.body ? longText(it.body) : '<div class="none">본문을 읽지 못했어요</div>');
     } else {
       const cs = it.comments || [];
-      body = cs.length ? cs.map((c, i) => `<div class="cmt${c.star ? ' star' : ''}"><div class="h"><b>${c.star ? '★ ' : ''}@${esc(c.a)}</b><span>♡ ${c.l || 0}</span></div><p>${esc(c.t)}</p>
-        ${(c.r || []).map(r => `<div class="rep"><div class="h"><b>@${esc(r.a)}${r.own ? '<span class="own">작성자</span>' : ''}</b><span>♡ ${r.l || 0}</span></div><p>${esc(r.t)}</p></div>`).join('')}</div>`).join('')
-        : '<div class="none">댓글이 없어요</div>';
+      const ref = it.platform === 'instagram' || it.platform === 'youtube';
+      const tools = it.commentBusy ? '<div class="none">댓글 가져오는 중…</div>'
+        : !cs.length && it.commentError ? `<div class="cmtx"><b>댓글을 못 가져왔어요</b><div class="why">${esc(String(it.commentError).split('\n')[0])}</div><div class="bt"><button class="chip dark" data-refetch>다시 가져오기</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>`
+        : !cs.length ? `<div class="cmtx"><div class="none">댓글이 없어요</div>${ref ? '<button class="chip" data-refetch>다시 가져오기</button>' : ''}</div>` : '';
+      body = tools || cs.map((c, i) => `<div class="cmt${c.star ? ' star' : ''}"><div class="h"><b>${c.star ? '★ ' : ''}@${esc(c.a)}</b><span>♡ ${c.l || 0}</span></div><p>${esc(c.t)}</p>
+        ${(c.r || []).map(r => `<div class="rep"><div class="h"><b>@${esc(r.a)}${r.own ? '<span class="own">작성자</span>' : ''}</b><span>♡ ${r.l || 0}</span></div><p>${esc(r.t)}</p></div>`).join('')}</div>`).join('') + (ref ? '<button class="refetch" data-refetch>댓글 다시 가져오기</button>' : '');
     }
     $('#dBody').innerHTML = `<div class="sec">${body}</div>`;
   }
@@ -325,12 +328,43 @@
       </div>
       <div class="group">
         <button class="row" id="sTool"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></span><span class="rt">영상 도구 업데이트</span><span class="rv">${esc(s.tool || '')}</span></button>
+        <button class="row" id="sDiag"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><path d="M9 11l2 2 4-4"/><rect x="4" y="4" width="16" height="16" rx="4"/></svg></span><span class="rt">검사</span></button>
         <div class="row"><span class="icb"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></svg></span><span class="rt">앱 버전</span><span class="rv">${esc(s.app || '')}</span></div>
       </div>`;
     $('#sIg').onclick = () => {
       if (s.igLogin) confirmAsk('인스타에서 로그아웃할까요?', '로그아웃', () => A.igLogout());
       else A.igLogin();
     };
+  }
+
+  // ── 검사 ──
+  let diagSteps = [], diagRunning = false, diagItem = null;
+  function openDiag(url, it, auto) {
+    diagItem = it || null;
+    $('#dgUrl').value = url || '';
+    diagSteps = []; renderDiag();
+    openPage('diag');
+    if (auto && url) setTimeout(runDiag, 400);
+  }
+  function runDiag() {
+    const u = findUrl($('#dgUrl').value);
+    if (!u) { toast('링크를 넣어 주세요'); return; }
+    if (diagRunning) return;
+    diagRunning = true; diagSteps = []; renderDiag();
+    $('#dgGo').classList.remove('on');
+    A.diag(u);
+  }
+  function renderDiag() {
+    $('#dgSteps').classList.toggle('hide', !diagSteps.length);
+    $('#dgSteps').innerHTML = diagSteps.map(s => `<div class="step ${s.state}"><div class="dot">${s.state === 'ok' ? '✓' : s.state === 'fail' ? '✕' : s.state === 'skip' ? '–' : ''}</div>
+      <div class="sb"><b>${esc(s.name)}</b><div class="sm">${esc(s.msg || (s.state === 'run' ? '확인 중…' : ''))}</div>${s.state === 'fail' && s.detail ? `<pre>${esc(s.detail)}</pre>` : ''}</div></div>`).join('');
+  }
+  function diagText() {
+    const L = ['[링크메모 검사] ' + $('#dgUrl').value];
+    diagSteps.forEach(s => { L.push((s.state === 'ok' ? '✓ ' : s.state === 'fail' ? '✕ ' : '– ') + s.name + ' : ' + (s.msg || '')); if (s.state === 'fail' && s.detail) L.push('   ' + s.detail.replace(/\n/g, '\n   ')); });
+    if (diagItem && diagItem.errorDetail) L.push('', '[저장 오류]', diagItem.errorDetail);
+    if (diagItem && diagItem.commentError) L.push('', '[댓글 오류]', diagItem.commentError);
+    return L.join('\n');
   }
 
   // ── 작은 창 ──
@@ -373,6 +407,13 @@
       openSave(url);
     },
     onBack() { return closeTop(); },
+    onDiag(json) {
+      const o = JSON.parse(json);
+      if (o.end) { diagRunning = false; $('#dgGo').classList.add('on'); if (o.error) toast('검사 중 오류'); const bad = diagSteps.filter(s => s.state === 'fail').length; toast(bad ? '✕ ' + bad + '곳에서 막혔어요' : '모두 통과했어요'); return; }
+      const i = diagSteps.findIndex(s => s.i === o.i);
+      if (i >= 0) diagSteps[i] = o; else diagSteps.push(o);
+      renderDiag();
+    },
     onResume() { load(); if ($('#settings').classList.contains('open')) renderSettings(); },
     insets(top, bottom) {
       document.documentElement.style.setProperty('--st', top + 'px');
@@ -385,6 +426,8 @@
     const t = e.target;
     const card = t.closest('.card'); if (card) return openDetail(card.dataset.id);
     const pill = t.closest('.pill'); if (pill) { filter = pill.dataset.t; renderHome(); return; }
+    const dg = t.closest('[data-diag]'); if (dg) { const it = byId(dg.dataset.diag); return openDiag(it ? it.url : '', it, true); }
+    if (t.closest('[data-refetch]')) { const it = byId(cur); if (it) { it.commentBusy = true; renderTabs(it); A.refetchComments(cur); } return; }
     const ec = t.closest('[data-errcopy]'); if (ec) { const it = byId(ec.dataset.errcopy); A.copy((it.url || '') + '\n' + (it.errorDetail || it.error || '')); toast('오류 내용을 복사했어요'); return; }
     const rt = t.closest('[data-retry]'); if (rt) return A.retry(rt.dataset.retry);
     const dl = t.closest('[data-del]'); if (dl) { A.remove(dl.dataset.del); items = items.filter(x => x.id !== dl.dataset.del); renderHome(); return; }
@@ -416,10 +459,13 @@
       $('#sQ i').style.transform = `translateX(${i * 100}%)`; return;
     }
     if (t.closest('#sDelVid')) return confirmAsk('저장한 영상을 모두 지울까요? (메모 · 캡처는 남아요)', '지우기', () => { A.deleteVideos(); load(); renderSettings(); });
+    if (t.closest('#sDiag')) { const last = items.find(x => x.url); return openDiag(last ? last.url : '', null, false); }
     if (t.closest('#sTool')) { toast('확인하는 중…'); return A.updateTool(); }
   });
 
   $('#btnSettings').onclick = openSettings;
+  $('#dgGo').onclick = runDiag;
+  $('#dgCopy').onclick = () => { A.copy(diagText()); toast('결과를 복사했어요'); };
   $('#dim').onclick = () => { const top = stack[stack.length - 1]; if (top && top.type === 'sheet') closeSheet(top.id); };
   $('#ssGo').onclick = doSave;
   $('#ssMemo').addEventListener('keydown', e => { if (e.key === 'Enter') doSave(); });
@@ -468,7 +514,7 @@
     let data = [
       { id: 'a', url: 'https://www.instagram.com/reel/x', platform: 'instagram', kind: '릴스', status: 'done', title: '나트랑 시내 맛집 4곳 추천', author: 'yytable', desc: '나트랑 시내에서 현지인이 많이 가는 식당 4곳!\n1. Lai Seafood\n2. Ớt Hiểm Thai Cuisine', duration: 48, w: 720, h: 1280, memo: '12월 여행 때 저녁', tags: ['여행'], createdAt: now,
         comments: [{ a: 'traveler_kim', t: '저녁 6시 전에 가야 웨이팅 없어요', l: 312, r: [{ a: 'yytable', t: '맞아요! 6시 넘으면 30분 넘게 기다려요', l: 20, own: true }] }, { a: 'minji', t: '저장해둡니다', l: 54 }], captures: [] },
-      { id: 'b', url: 'https://youtube.com/shorts/y', platform: 'youtube', kind: '쇼츠', status: 'done', title: '피그마 아이콘 파일 50개 이상 무료 배포', author: 'figma.create', desc: '댓글에 icon 남기면 보내드려요', duration: 35, w: 720, h: 1280, tags: ['디자인'], createdAt: now, comments: [], captures: [] },
+      { id: 'b', url: 'https://youtube.com/shorts/y', platform: 'youtube', kind: '쇼츠', status: 'done', title: '피그마 아이콘 파일 50개 이상 무료 배포', author: 'figma.create', desc: '댓글에 icon 남기면 보내드려요', duration: 35, w: 720, h: 1280, tags: ['디자인'], createdAt: now, comments: [], commentError: '[화면] HTTP 403 login_required\n[직접] HTTP 403', captures: [] },
       { id: 'c', url: 'https://brunch.co.kr/z', platform: 'web', kind: '웹', status: 'done', title: '홈카페 라떼아트 기초', author: 'brunch.co.kr', desc: '', body: '우유 온도는 60도가 좋아요.', tags: [], createdAt: now, comments: [], captures: [] },
       { id: 'd', url: 'https://www.instagram.com/reel/z', platform: 'instagram', status: 'saving', stage: '영상 받는 중', progress: 62, createdAt: now },
       { id: 'e', url: 'https://www.instagram.com/reel/q', platform: 'instagram', status: 'error', error: '인스타 로그인이 필요해요', errorDetail: 'ERROR: login required', createdAt: now },
@@ -479,7 +525,10 @@
       update: () => '', remove: () => {}, retry: () => {}, capture: () => '', removeCapture: () => '',
       open: () => {}, copy: () => {}, shareText: () => {}, exportFile: () => {},
       settings: () => JSON.stringify({ quality: '720', igLogin: false, used: 1.2e9, tool: '2026.11.01', app: '0.1' }),
-      setQuality: () => {}, igLogin: () => {}, igLogout: () => {}, deleteVideos: () => {}, updateTool: () => {}, toast: () => {},
+      setQuality: () => {}, refetchComments: () => {},
+      diag: (u) => { const st = [['링크 종류', 'ok', '인스타 · 게시물 abc'], ['인터넷 연결', 'ok', '응답 200'], ['인스타 로그인', 'ok', '로그인됨'], ['내용 읽기 (yt-dlp)', 'ok', '제목 ✓ · 설명 320자'], ['댓글 가져오기', 'fail', '[화면] HTTP 403']];
+        st.forEach((x, i) => setTimeout(() => App.onDiag(JSON.stringify({ i, name: x[0], state: x[1], msg: x[2], detail: x[1] === 'fail' ? '[화면] HTTP 403 {"message":"login_required"}' : '' })), 150 * i));
+        setTimeout(() => App.onDiag('{"end":true}'), 900); }, igLogin: () => {}, igLogout: () => {}, deleteVideos: () => {}, updateTool: () => {}, toast: () => {},
     };
   }
 })();
