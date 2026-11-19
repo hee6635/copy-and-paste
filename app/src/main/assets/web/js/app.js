@@ -79,7 +79,7 @@
     const q = query.toLowerCase();
     const ai = it.ai || {};
     const hay = [it.title, it.author, it.desc, it.body, it.memo, it.url, fPath(it.folder),
-      (ai.summary || []).join(' '), (ai.tips || []).map(x => x.text).join(' '), (ai.facts || []).map(x => x.text).join(' '), (ai.transcript || []).map(x => x.text).join(' '),
+      (ai.summary || []).map(x => String(x).replace(/\[\[|\]\]/g, '')).join(' '), (ai.course || []).join(' '), (ai.tips || []).map(x => x.text).join(' '), (ai.facts || []).map(x => x.text).join(' '), (ai.transcript || []).map(x => x.text).join(' '),
       ai.recipe ? (ai.recipe.ingredients || []).concat(ai.recipe.steps || []).join(' ') : '', (ai.checklist || []).join(' '), (it.tags || []).join(' '),
       (it.comments || []).map(c => c.a + ' ' + c.t + ' ' + (c.r || []).map(r => r.t).join(' ')).join(' '),
       (it.captures || []).map(c => c.text + ' ' + c.memo).join(' ')].join(' ').toLowerCase();
@@ -435,12 +435,9 @@
   function renderAi(it) {
     const el = $('#dAi'); if (!el) return;
     const ai = it.ai;
-    if (it.aiBusy) {
-      el.innerHTML = `<div class="sec"><div class="sh"><b>AI 정리 중</b><span class="elapsed" data-since="${it.aiBusyAt || Date.now()}">${since(it.aiBusyAt)}</span></div>
-        <div class="busyline">${esc(it.aiBusy)}</div><div class="aibar"><i></i></div>
-        <div class="bt" style="margin-top:12px"><button class="chip" data-aistop>중지</button></div>${logHtml(null)}</div>`;
-      return;
-    }
+    if (it.aiBusy) { liveRender(it); return; }
+    if (live) typeTok++;
+    live = null;
     if (!ai) {
       el.innerHTML = it.aiError ? `<div class="sec"><div class="cmtx"><b>AI 정리를 못 했어요</b><div class="why pre">${esc(String(it.aiError))}</div>
         <div class="bt"><button class="chip dark" data-airedo>다시 정리</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>${logHtml(it.aiLog, true)}</div>` : '';
@@ -451,7 +448,8 @@
     const sugg = ai.folder && ai.folder.trim() && fPath(it.folder) !== ai.folder.trim() ? ai.folder.trim() : '';
     if (sum.length || sugg) h += `<div class="sec"><div class="sh"><b>요약</b><button class="ai" data-airedo aria-label="다시 정리">AI ↻</button></div>
       ${ai.log ? `<button class="runinfo" data-runlog>${fmtMs(ai.log.total)} · ${esc(mLabel(ai.model))}${(ai.log.why || []).length ? ' · 오래 걸린 이유 ' + ai.log.why.length : ''}<svg class="ic" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button><div class="runlog hide">${logHtml(ai.log)}</div>` : ''}
-      ${sum.map((x, i) => `<ul class="sum"><li>${esc(x)}</li></ul>${attHtml(it, 'summary', i)}`).join('')}
+      ${(ai.course || []).length ? `<div class="course">${ai.course.map((c, i) => (i ? '<em>→</em>' : '') + `<span>${i + 1} ${esc(c)}</span>`).join('')}</div>` : ''}
+      ${sum.map((x, i) => sumCard(it, x, i)).join('')}
       ${sugg ? `<div class="sugg"><div class="t">폴더 추천 <b>${esc(sugg)}</b></div><button data-sugg>옮기기</button></div>` : ''}</div>`;
     const facts = (ai.facts || []).filter(f => f && f.text);
     if (facts.length) h += `<div class="sec"><div class="sh"><b>${ai.video ? '영상에서 뽑은 정보' : '핵심 정보'}</b><span class="ai">AI</span></div>
@@ -465,6 +463,107 @@
       ${ai.checklist.map((x, i) => `<button class="chk${(ck.c || []).includes(i) ? ' on' : ''}" data-chk="c:${i}"><i></i><span>${esc(x)}</span></button>`).join('')}</div>`;
     if (it.aiError) h += `<div class="sec"><div class="cmtx"><div class="why">다시 정리 실패: ${esc(String(it.aiError).split('\n')[0])}</div></div></div>`;
     el.innerHTML = h;
+  }
+
+  /** [[핵심]] → 노란 칩 */
+  const rich = s => esc(s).replace(/\[\[(.+?)\]\]/g, '<span class="chip2">$1</span>');
+  const plain = s => String(s || '').replace(/\[\[(.+?)\]\]/g, '$1');
+  /** 요약 한 줄 = 카드 (붙은 첫 사진은 크게, 나머지는 작게) */
+  function sumCard(it, x, i) {
+    const cs = (it.captures || []).filter(c => c.at && c.at.sec === 'summary' && +c.at.i === i);
+    const big = cs[0], rest = cs.slice(1);
+    return `<div class="scard">${big ? `<button class="sbig" data-cap="${esc(big.id)}"><img src="${fileUrl(it.id, big.file)}" alt=""><span class="tc">${fmtT(big.t)}</span>${big.ai ? '<span class="aib">AI</span>' : ''}</button>` : ''}
+      <div class="stx">${rich(x)}</div>${rest.length ? `<div class="att in">${rest.map(c => `<button class="shot" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}</button>`).join('')}</div>` : ''}</div>`;
+  }
+
+  // ── AI 가 쓰는 중: 설명 → 받아쓰기 → 중요한 줄 → 요약 카드 (주르륵) ──
+  let live = null;
+  function sliceKey(txt, key) {
+    const i = txt.indexOf('"' + key + '"'); if (i < 0) return null;
+    const keys = ['transcript', 'facts', 'summary', 'course', 'tips', 'keyshots', 'recipe', 'checklist', 'tags', 'folder', 'kind', 'category', 'star'];
+    let end = txt.length;
+    keys.forEach(k => { if (k === key) return; const j = txt.indexOf('"' + k + '"', i + 1); if (j > i && j < end) end = j; });
+    return txt.slice(i, end);
+  }
+  const unq = s => { try { return JSON.parse('"' + s + '"'); } catch (e) { return s.replace(/\\"/g, '"'); } };
+  function parsePartial(txt) {
+    const out = { ts: [], facts: [], sum: [], course: [] };
+    const objs = sl => sl ? [...sl.matchAll(/\{\s*"t"\s*:\s*(-?[\d.]+)\s*,\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g)].map(m => ({ t: +m[1], text: unq(m[2]) })) : [];
+    const strs = sl => { if (!sl) return []; const b = sl.indexOf('['); if (b < 0) return []; return [...sl.slice(b).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map(m => unq(m[1])); };
+    out.ts = objs(sliceKey(txt, 'transcript'));
+    out.facts = objs(sliceKey(txt, 'facts'));
+    out.sum = strs(sliceKey(txt, 'summary'));
+    out.course = strs(sliceKey(txt, 'course'));
+    return out;
+  }
+  let typeQ = Promise.resolve(), typeTok = 0;
+  function typeIn(el, text, cps) {
+    const tok = typeTok;
+    typeQ = typeQ.then(async () => {
+      if (tok !== typeTok || !el.isConnected) { el.textContent = text; return; }
+      el.classList.add('cursor');
+      const step = Math.max(1, Math.round(cps / 30));
+      for (let i = step; i < text.length; i += step) { if (tok !== typeTok || !el.isConnected) break; el.textContent = text.slice(0, i); await new Promise(r => setTimeout(r, 1000 / 30)); }
+      el.textContent = text; el.classList.remove('cursor');
+    });
+    return typeQ;
+  }
+  function liveRender(it) {
+    const el = $('#dAi');
+    if (live && live.id === it.id && el.querySelector('#lv')) { $('#lvSt').textContent = it.aiBusy; return; }
+    typeTok++; typeQ = Promise.resolve();
+    live = { id: it.id, ts: 0, sum: 0, course: 0, phase: 'raw', facts: 0 };
+    el.innerHTML = `<div id="lv"><div class="lvst"><span class="dot"></span><span id="lvSt">${esc(it.aiBusy)}</span><span class="elapsed" data-since="${it.aiBusyAt || Date.now()}">${since(it.aiBusyAt)}</span><button class="chip" data-aistop>중지</button></div>
+      ${it.desc || it.body ? '<div class="lvbox" id="lvDesc"><h4>설명</h4><div class="desc"></div></div>' : ''}
+      <div class="lvbox" id="lvTs"><h4>받아쓰기</h4><div id="lvTsList"><div class="watch"><i></i>영상 보는 중…</div></div></div>
+      <div class="course" id="lvCourse"></div><div id="lvCards"></div></div>`;
+    const d = el.querySelector('#lvDesc .desc'); if (d) typeIn(d, (it.desc || it.body || '').slice(0, 320), 400);
+  }
+  function collapse(box) { if (!box || box.classList.contains('gone')) return; box.style.maxHeight = box.scrollHeight + 'px'; box.offsetHeight; box.classList.add('gone'); }
+  function liveUpdate(txt) {
+    if (!live || !$('#lv')) return;
+    const p = parsePartial(txt);
+    const list = $('#lvTsList');
+    if (p.ts.length && list.querySelector('.watch')) list.innerHTML = '';
+    for (; live.ts < p.ts.length; live.ts++) {
+      const x = p.ts[live.ts];
+      const row = document.createElement('div'); row.className = 'tl'; row.dataset.t = x.t;
+      row.innerHTML = `<b>${fmtT(x.t)}</b><span></span>`; list.appendChild(row);
+      typeIn(row.querySelector('span'), x.text, 70);
+    }
+    // 정보가 나오면: 받아쓰기에서 그 시각 줄을 반짝
+    if (p.facts.length > live.facts) {
+      live.facts = p.facts.length;
+      typeQ = typeQ.then(() => {
+        const rows = [...document.querySelectorAll('#lvTsList .tl')];
+        rows.forEach(r => { const hit = p.facts.some(f => f.t >= 0 && Math.abs(f.t - +r.dataset.t) < 2); r.classList.toggle('hi', hit); r.classList.toggle('lo', !hit); });
+      });
+    }
+    // 요약이 나오기 시작하면: 설명 · 받아쓰기를 접고 카드로
+    if (p.sum.length && live.phase === 'raw') {
+      live.phase = 'sum';
+      typeQ = typeQ.then(() => new Promise(r => setTimeout(r, 700))).then(() => { collapse($('#lvDesc')); collapse($('#lvTs')); });
+    }
+    const done = p.sum.length - (/"\s*\]/.test(sliceKey(txt, 'summary') || '') ? 0 : 1);  // 마지막 줄은 끝날 때까지 기다림
+    for (; live.sum < Math.max(0, done); live.sum++) {
+      const x = p.sum[live.sum];
+      typeQ = typeQ.then(() => {
+        const c = document.createElement('div'); c.className = 'scard pop'; c.innerHTML = '<div class="stx"></div>';
+        $('#lvCards') && $('#lvCards').appendChild(c);
+        const tx = c.querySelector('.stx'); tx.classList.add('cursor');
+        return new Promise(async r => { const t = plain(x); for (let i = 2; i < t.length; i += 2) { tx.textContent = t.slice(0, i); await new Promise(z => setTimeout(z, 33)); } tx.innerHTML = rich(x); tx.classList.remove('cursor'); r(); });
+      });
+    }
+    const cd = p.course.length - (/"\s*\]/.test(sliceKey(txt, 'course') || '') ? 0 : 1);
+    for (; live.course < Math.max(0, cd); live.course++) {
+      const i = live.course, name = p.course[i];
+      typeQ = typeQ.then(() => new Promise(r => {
+        const box = $('#lvCourse'); if (!box) return r();
+        if (i) { const e = document.createElement('em'); e.textContent = '→'; box.appendChild(e); }
+        const s2 = document.createElement('span'); s2.textContent = (i + 1) + ' ' + name; box.appendChild(s2);
+        requestAnimationFrame(() => s2.classList.add('on')); setTimeout(r, 160);
+      }));
+    }
   }
 
   // 접기 · 펼치기 (상세를 열 때마다 접힌 상태로 시작)
@@ -643,7 +742,7 @@
     attSel = mode.cur != null ? mode.cur : best;
     const row = (k, label) => `<button class="rad${attSel === k ? ' on' : ''}" data-att="${k}"><i></i><span>${esc(label)}</span></button>`;
     let h = '';
-    if ((ai.summary || []).length) h += '<div class="agrp">요약</div>' + ai.summary.map((x, i) => row('summary:' + i, x)).join('');
+    if ((ai.summary || []).length) h += '<div class="agrp">요약</div>' + ai.summary.map((x, i) => row('summary:' + i, plain(x))).join('');
     if ((ai.facts || []).length) h += `<div class="agrp">${ai.video ? '영상에서 뽑은 정보' : '핵심 정보'}</div>` + ai.facts.map((f, i) => row('facts:' + i, (+f.t >= 0 ? fmtT(f.t) + ' ' : '') + f.text)).join('');
     h += '<div class="agrp">그 밖</div>' + row('', '캡처 칸에만 두기');
     $('#attList').innerHTML = h;
@@ -692,7 +791,8 @@
     L.push('🔗 ' + it.url);
     if ((it.tags || []).length) L.push(it.tags.map(t => '#' + t).join(' '));
     if (it.memo) L.push('', '── 내 메모 ──', it.memo);
-    if (it.ai && (it.ai.summary || []).length) L.push('', '── 요약 ──', ...it.ai.summary.map(x => '· ' + x));
+    if (it.ai && (it.ai.course || []).length) L.push('', '── 코스 ──', it.ai.course.join(' → '));
+    if (it.ai && (it.ai.summary || []).length) L.push('', '── 요약 ──', ...it.ai.summary.map(x => '· ' + plain(x)));
     if (it.ai && (it.ai.facts || []).length) L.push('', '── 핵심 정보 ──', ...it.ai.facts.map(x => (+x.t >= 0 ? '[' + fmtT(x.t) + '] ' : '· ') + x.text));
     if (it.ai && (it.ai.tips || []).length) L.push('', '── 영상 · 댓글 꿀팁 ──', ...it.ai.tips.map((x, i) => (i + 1) + '. ' + x.text + (x.from === 'video' && +x.t >= 0 ? ' (영상 ' + fmtT(x.t) + ')' : x.from === 'author' ? ' (작성자)' : '')));
     if (it.ai && it.ai.recipe && (it.ai.recipe.ingredients || []).length) L.push('', '── 재료 ──', ...it.ai.recipe.ingredients.map(x => '· ' + x), '', '── 순서 ──', ...(it.ai.recipe.steps || []).map((x, i) => (i + 1) + '. ' + x));
@@ -727,7 +827,7 @@
     }
     $('#cOcr').innerHTML = `<small>화면 글자</small>${c.ocr === 'busy' ? '읽는 중…' : (c.text ? esc(c.text) : '글자가 없어요')}`;
     const ai = it.ai || {};
-    const where = c.at ? (c.at.sec === 'summary' ? '요약: ' + ((ai.summary || [])[c.at.i] || '') : '정보: ' + (((ai.facts || [])[c.at.i] || {}).text || '')) : '캡처 칸에만';
+    const where = c.at ? (c.at.sec === 'summary' ? '요약: ' + plain((ai.summary || [])[c.at.i] || '') : '정보: ' + (((ai.facts || [])[c.at.i] || {}).text || '')) : '캡처 칸에만';
     $('#cAt').innerHTML = `<span>붙인 곳 <b>${esc(where)}</b></span><button class="chip" data-capmove>바꾸기</button>`;
   }
   function saveCapMemo() {
@@ -847,6 +947,7 @@
       openSave(url);
     },
     onBack() { return closeTop(); },
+    onPartial(id, txt) { if (cur === id && $('#detail').classList.contains('open')) liveUpdate(txt); },
     onDiag(json) {
       const o = JSON.parse(json);
       if (o.end) { diagRunning = false; $('#dgGo').classList.add('on'); if (o.error) toast('검사 중 오류'); const bad = diagSteps.filter(s => s.state === 'fail').length; toast(bad ? '✕ ' + bad + '곳에서 막혔어요' : '모두 통과했어요'); return; }
@@ -980,7 +1081,7 @@
     const it = byId(cur); if (!it) return;
     const done = (txt, what) => { A.copy(txt); toast(what + ' 복사했어요'); };
     const rows = [['전체', () => done(itemText(it), '전체를')]];
-    if (it.ai && (it.ai.summary || []).length) rows.push(['요약', () => done(it.ai.summary.join('\n'), '요약을')]);
+    if (it.ai && (it.ai.summary || []).length) rows.push(['요약', () => done(it.ai.summary.map(plain).join('\n'), '요약을')]);
     if (it.ai && (it.ai.tips || []).length) rows.push(['댓글 꿀팁', () => done(it.ai.tips.map((x, i) => (i + 1) + '. ' + x.text).join('\n'), '꿀팁을')]);
     if (it.ai && (it.ai.transcript || []).length) rows.push(['받아쓰기', () => done(it.ai.transcript.map(x => '[' + fmtT(x.t) + '] ' + x.text).join('\n'), '받아쓰기를')]);
     if (it.desc) rows.push(['설명', () => done(it.desc, '설명을')]);
@@ -1016,14 +1117,14 @@
   });
 
   load();
-  if (!window.Android) window.__dev = { openCrop };
+  if (!window.Android) window.__dev = { openCrop, liveUpdate, liveStart: (id) => { const it = byId(id); it.aiBusy = 'AI 받아쓰는 중'; it.aiBusyAt = Date.now(); renderDetail(false); } };
 
   // ── 컴퓨터에서 화면만 볼 때 쓰는 가짜 브리지 ──
   function devBridge() {
     const now = Date.now();
     let data = [
       { id: 'a', url: 'https://www.instagram.com/reel/x', platform: 'instagram', kind: '릴스', status: 'done', category: '여행',
-        ai: { summary: ['체크아웃 후 콩카페 → 반쎄오 → 야시장 코스', '중간에 다른 메뉴 섞기 추천'], folder: '여행 › 나트랑', kind: 'recipe', recipe: { ingredients: ['감자 2개', '올리브유 1큰술'], steps: ['찬물에 10분', '200도 10분'] },
+        ai: { summary: ['청안딤섬 딤섬 한 판 [[약 3천 원]], 북경오리 추천', '포나가르 사원은 더우니 [[오전]]에'], course: ['콩카페', '포나가르 사원', '청안딤섬', '제시프루츠'], folder: '여행 › 나트랑', kind: 'recipe', recipe: { ingredients: ['감자 2개', '올리브유 1큰술'], steps: ['찬물에 10분', '200도 10분'] },
           tips: [{ text: '6시 전에 가야 웨이팅 없음', from: 'author', who: 'yytable' }], video: true, facts: [{ t: 5, text: 'Lai Seafood 랍스터 1kg 120만동' }, { t: -1, text: '화요일 휴무: Ớt Hiểm' }], model: 'gemini-2.5-flash',
           log: { total: 112000, rows: [{ step: '영상 올리기', ms: 8200, note: '12.3MB', ok: true }, { step: '영상 처리 대기', ms: 14000, note: '확인 7번', ok: true }, { step: '최신 flash #1', ms: 1200, note: '503 구글 서버가 바빠요(모델 혼잡) → 잠시 뒤 또는 다른 모델', ok: false }, { step: '2.5 flash #1', ms: 88000, note: '성공', ok: true }],
             usage: { totalTokenCount: 21000, promptTokenCount: 18000, videoTokens: 15000, thoughtsTokenCount: 2400, candidatesTokenCount: 600 }, why: ['실패 1번 → 다시 시도 · 다른 모델로 넘어감', 'AI가 답하기 전에 오래 생각함 (생각 2400 · 답 600 토큰)', '영상이 길어서 볼 양이 많음 (영상 15000 토큰)'] }, transcript: [{ t: 0, text: '오늘은 나트랑 3일차' }, { t: 12, text: '콩카페 먼저 가요' }] }, title: '나트랑 시내 맛집 4곳 추천', author: 'yytable', desc: '나트랑 시내에서 현지인이 많이 가는 식당 4곳!\n1. Lai Seafood\n2. Ớt Hiểm Thai Cuisine', duration: 48, w: 720, h: 1280, memo: '12월 여행 때 저녁', tags: ['여행'], createdAt: now,

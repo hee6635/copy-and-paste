@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         Events.listener = { o -> js("App.onItem(${JSONObject.quote(o.toString())})") }
+        Events.partial = { id, txt -> js("App.onPartial&&App.onPartial(${JSONObject.quote(id)},${JSONObject.quote(txt)})") }
         web.loadUrl("https://$HOST/assets/web/index.html")
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {

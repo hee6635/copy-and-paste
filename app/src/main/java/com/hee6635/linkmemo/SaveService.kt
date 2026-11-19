@@ -34,6 +34,9 @@ object Events {
     private val main = Handler(Looper.getMainLooper())
     @Volatile var listener: ((JSONObject) -> Unit)? = null
     fun item(o: JSONObject) { val l = listener ?: return; main.post { l(o) } }
+    /** AI 가 쓰는 중인 글 (주르륵 보여 주기용) */
+    @Volatile var partial: ((String, String) -> Unit)? = null
+    fun partial(id: String, text: String) { val l = partial ?: return; main.post { l(id, text) } }
 }
 
 /** yt-dlp · ffmpeg 준비 (처음 한 번 압축을 풀어서 몇 초 걸림) */
@@ -211,7 +214,7 @@ class SaveService : Service() {
             val ai = try {
                 Gemini.organize(this, item, folderPaths(), { st ->
                     emit(Store.patch(this, id) { it.put("aiBusy", "AI $st") })
-                }, temp, yt, pre)
+                }, temp, yt, pre) { txt -> Events.partial(id, txt) }
             } catch (e: Throwable) { temp?.delete(); throw e }
             // AI 가 고른 중요 장면 자동 캡처 (영상 파일이 있을 때: 저장한 영상 · 잠깐 받은 영상 · 유튜브는 작게 잠깐 받기)
             val shots = ai.optJSONArray("keyshots")
@@ -224,7 +227,7 @@ class SaveService : Service() {
                         src = try { tempVideo(id, url) } catch (_: Throwable) { null }
                         temp = src
                     }
-                    if (src != null) autoCaptures(id, src, shots)
+                    if (src != null) autoCaptures(id, src, shots, ai)
                 } catch (_: Throwable) {
                 } finally { temp?.delete() }
             } else temp?.delete()
@@ -255,7 +258,29 @@ class SaveService : Service() {
     }
 
     /** 예전 자동 캡처는 지우고, 새로 고른 장면을 잘라 붙임 + 글자 읽기 */
-    private fun autoCaptures(id: String, video: File, shots: JSONArray) {
+    /**
+     * 캡처를 붙일 줄 확인: AI 가 고른 줄에 사진 설명(why)의 낱말이 하나라도 나와야 붙임.
+     * 안 맞으면 낱말이 나오는 다른 줄(요약 → 정보) 을 찾고, 그래도 없으면 캡처 칸에만.
+     */
+    private fun attachFor(k: JSONObject, ai: JSONObject): JSONObject? {
+        val words = Regex("[가-힣A-Za-z0-9]{2,}").findAll(k.optString("why")).map { it.value }
+            .filter { it !in setOf("화면", "장면", "모습", "사진", "보이는", "있는", "메뉴", "이름") }.toList()
+        fun lineText(sec: String, i: Int): String? = when (sec) {
+            "summary" -> ai.optJSONArray("summary")?.optString(i)
+            "facts" -> ai.optJSONArray("facts")?.optJSONObject(i)?.optString("text")
+            else -> null
+        }
+        fun hit(s: String?) = s != null && words.any { w -> s.contains(w) || (w.length >= 3 && s.contains(w.take(w.length - 1))) }
+        val sec = k.optString("sec"); val idx = k.optInt("idx", -1)
+        if ((sec == "summary" || sec == "facts") && idx >= 0 && hit(lineText(sec, idx))) return JSONObject().put("sec", sec).put("i", idx)
+        for (s2 in listOf("summary", "facts")) {
+            val n = if (s2 == "summary") ai.optJSONArray("summary")?.length() ?: 0 else ai.optJSONArray("facts")?.length() ?: 0
+            for (i in 0 until n) if (hit(lineText(s2, i))) return JSONObject().put("sec", s2).put("i", i)
+        }
+        return null
+    }
+
+    private fun autoCaptures(id: String, video: File, shots: JSONArray, ai: JSONObject) {
         val dir = Store.dir(this, id)
         Store.get(this, id)?.optJSONArray("captures")?.let { arr ->
             for (i in 0 until arr.length()) { val c = arr.getJSONObject(i); if (c.optBoolean("ai")) File(dir, c.optString("file")).delete() }
@@ -268,8 +293,7 @@ class SaveService : Service() {
             val f = File(dir, "$capId.jpg")
             if (!Ocr.frame(video, t, f)) continue
             val c = JSONObject().put("id", capId).put("t", t).put("file", f.name).put("text", "").put("memo", k.optString("why")).put("ocr", "busy").put("ai", true)
-            val sec = k.optString("sec"); val idx = k.optInt("idx", -1)
-            if ((sec == "summary" || sec == "facts") && idx >= 0) c.put("at", JSONObject().put("sec", sec).put("i", idx))
+            attachFor(k, ai)?.let { c.put("at", it) }
             made += c
         }
         emit(Store.patch(this, id) { o ->

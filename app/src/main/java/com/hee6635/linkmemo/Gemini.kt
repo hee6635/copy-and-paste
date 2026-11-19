@@ -63,6 +63,7 @@ object Gemini {
         if (t.has("send")) p += "보내기 " + sec(t.optLong("send"))
         if (t.has("wait")) p += "첫 답까지 " + sec(t.optLong("wait"))
         if (t.has("server")) p += "(그중 구글 처리 " + sec(t.optLong("server")) + ")"
+        if (t.has("first")) p += "첫 글자까지 +" + sec(t.optLong("first"))
         if (t.has("read")) p += "받기 " + sec(t.optLong("read"))
         return p.joinToString(" · ")
     }
@@ -239,9 +240,10 @@ object Gemini {
         val sb = StringBuilder()
         sb.append("""너는 사용자가 저장한 SNS 게시물 · 영상 · 웹페이지를 메모로 정리하는 도우미야. 한국어로, 짧고 쉽게.
 규칙:
-- summary: 핵심 2~4줄. 각 줄 45자 안팎. 코스 · 장소 같은 큰 흐름 + 바로 쓸 실용 팁(가격 · 시간대 · 주의 · 추천)을 영상(말 · 화면 글자) · 설명 · 댓글 · 작성자 답글에서 골라 넣기. 광고 문구 · 해시태그 · "저장하세요" 같은 말은 빼기.
+- summary: 핵심 2~4줄. 각 줄 45자 안팎. 줄마다 가장 중요한 말(가격 · 시간대 · 장소 이름 · 수치) 1~2개를 [[ ]] 로 감싸기 (예: 딤섬 한 판 [[약 3천 원]]). 코스 · 장소 같은 큰 흐름 + 바로 쓸 실용 팁(가격 · 시간대 · 주의 · 추천)을 영상(말 · 화면 글자) · 설명 · 댓글 · 작성자 답글에서 골라 넣기. 광고 문구 · 해시태그 · "저장하세요" 같은 말은 빼기.
 - tags: 2~5개, # 없이 짧은 명사 (지명 · 음식 · 주제).
 - folder: 아래 "내 폴더" 중 가장 맞는 것의 경로를 그대로 쓰기. 맞는 게 없으면 "큰폴더 › 작은폴더" 또는 "큰폴더" 형식으로 새로 제안. 작은 폴더는 지명이나 구체 주제일 때만.
+- course: 여행 · 나들이처럼 순서가 있는 경우만, 들른 곳을 순서대로 짧은 이름으로 (없으면 빈 목록).
 - category: 아래 목록 중 딱 하나 (큰 갈래): ${CATEGORIES.joinToString(", ")}
 - kind: 요리법이면 recipe, 할 일 · 준비물 목록이면 checklist, 그 밖은 general.
 - recipe: kind 가 recipe 일 때만. 재료(양 포함)와 순서.
@@ -250,7 +252,7 @@ object Gemini {
 - star: 정보가 있는 댓글의 번호(0부터) 목록.
 """)
         sb.append("- facts: 영상 · 글에서 나온 구체 정보만 0~8개 (가게 · 장소 이름, 가격, 시간, 수치, 방법). 영상에서 나온 것이면 t 에 그 시각(초), 아니면 -1.\n")
-        if (withVideo) sb.append("- keyshots: 캡처해 둘 만한 중요한 장면 3~5개 (메뉴판 · 가격표 · 간판 · 지도 · 완성 요리처럼 정보가 화면에 보이는 순간). t 는 그 시각(초, 화면이 또렷한 순간), why 는 무엇이 보이는지 짧게, sec 는 이 장면이 뒷받침하는 줄이 summary 면 summary · facts 면 facts, idx 는 그 줄 번호(0부터).\n")
+        if (withVideo) sb.append("- keyshots: 캡처해 둘 만한 중요한 장면 3~5개 (메뉴판 · 가격표 · 간판 · 지도 · 완성 요리처럼 정보가 화면에 보이는 순간). t 는 그 시각(초, 화면이 또렷한 순간), why 는 무엇이 보이는지 짧게, sec · idx 는 사진에 보이는 것이 그 줄에 직접 나오는 경우만 (summary 또는 facts 와 그 줄 번호 0부터). 예: 망고빙수 사진을 호텔 줄에 붙이면 안 됨. 맞는 줄이 없으면 idx 는 -1.\n")
         else sb.append("- keyshots: 빈 목록.\n")
         if (withVideo) sb.append("- transcript: 영상에서 말하는 내용을 시간(초)과 함께 받아쓰기. 화면에 크게 나오는 글자도 [화면] 으로 넣기. 말이 없으면 빈 목록.\n")
         else sb.append("- transcript: 빈 목록.\n")
@@ -297,8 +299,12 @@ object Gemini {
             "star" to arr(JSONObject().put("type", "INTEGER")),
             "transcript" to arr(obj("t" to JSONObject().put("type", "NUMBER"), "text" to str(), req = listOf("t", "text"))),
             "facts" to arr(obj("t" to JSONObject().put("type", "NUMBER"), "text" to str(), req = listOf("t", "text"))),
+            "course" to arr(str()),
             req = listOf("summary", "tags", "folder", "kind", "category", "tips", "star", "transcript")
-        )
+        ).put("propertyOrdering", JSONArray(listOf(
+            // 화면에 먼저 보일 것부터: 받아쓰기 → 정보 → 요약 → 코스 → 꿀팁 → 나머지
+            "transcript", "facts", "summary", "course", "tips", "keyshots", "recipe", "checklist",
+            "tags", "folder", "kind", "category", "star")))
     }
 
     /** 메모 하나 정리. 결과 JSON(ai) 을 돌려준다 */
@@ -317,18 +323,19 @@ object Gemini {
      * pre: 정리 전에 한 일(영상 잠깐 받기 등) 기록
      */
     fun organize(ctx: Context, item: JSONObject, folders: List<String>, onStage: (String) -> Unit,
-                 tempVideo: File? = null, ytUrl: String? = null, pre: List<Triple<String, Long, String>> = emptyList()): JSONObject {
+                 tempVideo: File? = null, ytUrl: String? = null, pre: List<Triple<String, Long, String>> = emptyList(),
+                 onPartial: ((String) -> Unit)? = null): JSONObject {
         val key = key(ctx)
         if (key.isEmpty()) throw IllegalStateException("Gemini API 키가 없어요 (설정에서 넣어 주세요)")
         cancelled = false
         val log = RunLog(ctx)
         pre.forEach { (step, ms, note) -> log.add(step, ms, note, !note.startsWith("실패")) }
-        return try { organizeImpl(ctx, key, item, folders, onStage, log, tempVideo, ytUrl) }
+        return try { organizeImpl(ctx, key, item, folders, onStage, log, tempVideo, ytUrl, onPartial) }
         catch (e: Throwable) { throw AiFail(if (cancelled) "중지했어요" else explain(e), log.json(null)) }
     }
 
     private fun organizeImpl(ctx: Context, key: String, item: JSONObject, folders: List<String>, onStage: (String) -> Unit, log: RunLog,
-                             tempVideo: File?, ytUrl: String?): JSONObject {
+                             tempVideo: File?, ytUrl: String?, onPartial: ((String) -> Unit)?): JSONObject {
         val parts = JSONArray()
         val vName = item.optString("video")
         val saved = if (vName.isNotEmpty()) File(Store.dir(ctx, item.optString("id")), vName) else null
@@ -355,7 +362,7 @@ object Gemini {
                 .put("temperature", 0.3)
                 .also { if (withVideo) it.put("mediaResolution", "MEDIA_RESOLUTION_LOW") })
         onStage(if (withVideo) "받아쓰는 중" else "정리 중")
-        val (text, used) = generate(ctx, key, req, onStage, log, withVideo)
+        val (text, used) = generate(ctx, key, req, onStage, log, withVideo, onPartial)
         count(ctx)
         val res = JSONObject(text)
         val um = res.optJSONObject("usageMetadata")
@@ -381,7 +388,68 @@ object Gemini {
      * 모델마다 최대 3번(2초 · 5초 쉬고). 응답 없음(글만 40초 · 영상 120초)이면 바로 다음 모델로.
      * 키 문제(키 틀림 400 · 401 · 403)는 바로 멈춤. 생각 과정은 끔(2.5 모델).
      */
-    private fun generate(ctx: Context, key: String, req: JSONObject, onStage: (String) -> Unit, log: RunLog, withVideo: Boolean): Pair<String, String> {
+    /**
+     * 주르륵 받기(SSE): 조각이 올 때마다 지금까지 모인 글을 onPartial 로 (0.25초에 한 번).
+     * 다 받으면 보통 응답과 같은 모양(candidates · usageMetadata · modelVersion)으로 돌려줌.
+     */
+    private fun streamPost(url: String, key: String, body: ByteArray, timeout: Int, onPartial: ((String) -> Unit)?): String {
+        checkCancel()
+        val c = URL(url).openConnection() as HttpURLConnection
+        current = c
+        c.requestMethod = "POST"; c.doOutput = true
+        c.connectTimeout = 20000; c.readTimeout = timeout
+        c.setRequestProperty("x-goog-api-key", key)
+        c.setRequestProperty("Content-Type", "application/json")
+        val tm = JSONObject(); last = tm
+        val t0 = System.currentTimeMillis()
+        c.connect(); val t1 = System.currentTimeMillis(); tm.put("connect", t1 - t0)
+        c.outputStream.use { it.write(body) }
+        val t2 = System.currentTimeMillis(); tm.put("send", t2 - t1)
+        val code = c.responseCode
+        val t3 = System.currentTimeMillis(); tm.put("wait", t3 - t2)
+        c.getHeaderField("server-timing")?.let { st -> Regex("dur=([0-9.]+)").find(st)?.groupValues?.get(1)?.toDoubleOrNull()?.let { tm.put("server", it.toLong()) } }
+        if (code !in 200..299) {
+            val text = c.errorStream?.bufferedReader()?.readText() ?: ""
+            val msg = try { JSONObject(text).optJSONObject("error")?.optString("message") } catch (_: Exception) { null } ?: text.take(200)
+            throw HttpErr(code, when (code) {
+                400 -> if (text.contains("API key not valid") || text.contains("API_KEY_INVALID")) "400 키가 맞지 않아요 → 키를 다시 복사해서 넣기" else "400 요청 오류: $msg"
+                401 -> "401 인증 실패 → 키를 다시 넣기"
+                403 -> "403 이 키로 사용이 막혀 있어요 ($msg)"
+                404 -> "404 모델을 찾을 수 없어요 ($msg)"
+                429 -> "429 사용량 한도 → 무료 분당 · 하루 한도를 넘었어요. 잠시 뒤 또는 내일"
+                503 -> "503 구글 서버가 바빠요(모델 혼잡) → 잠시 뒤 또는 다른 모델"
+                else -> "$code $msg"
+            })
+        }
+        val acc = StringBuilder()
+        var usage: JSONObject? = null; var ver = ""; var finish = ""
+        var lastEmit = 0L; var firstChunk = -1L
+        c.inputStream.bufferedReader().useLines { lines ->
+            for (line in lines) {
+                if (!line.startsWith("data:")) continue
+                val j = try { JSONObject(line.removePrefix("data:").trim()) } catch (_: Exception) { continue }
+                if (firstChunk < 0) firstChunk = System.currentTimeMillis() - t3
+                j.optJSONObject("usageMetadata")?.let { usage = it }
+                j.optString("modelVersion").takeIf { it.isNotEmpty() }?.let { ver = it }
+                val cand = j.optJSONArray("candidates")?.optJSONObject(0)
+                cand?.optString("finishReason")?.takeIf { it.isNotEmpty() }?.let { finish = it }
+                val parts = cand?.optJSONObject("content")?.optJSONArray("parts")
+                if (parts != null) for (i in 0 until parts.length()) acc.append(parts.getJSONObject(i).optString("text"))
+                val now = System.currentTimeMillis()
+                if (onPartial != null && now - lastEmit > 250) { lastEmit = now; onPartial(acc.toString()) }
+            }
+        }
+        tm.put("read", System.currentTimeMillis() - t3)
+        if (firstChunk >= 0) tm.put("first", firstChunk)
+        onPartial?.invoke(acc.toString())
+        return JSONObject()
+            .put("candidates", JSONArray().put(JSONObject().put("finishReason", finish)
+                .put("content", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", acc.toString()))))))
+            .put("usageMetadata", usage ?: JSONObject()).put("modelVersion", ver).toString()
+    }
+
+    private fun generate(ctx: Context, key: String, req: JSONObject, onStage: (String) -> Unit, log: RunLog, withVideo: Boolean,
+                         onPartial: ((String) -> Unit)? = null): Pair<String, String> {
         val tried = StringBuilder()
         val limit = if (withVideo) 120000 else 40000
         val models = order(ctx)
@@ -396,8 +464,7 @@ object Gemini {
                 onStage("${label(model)}로 정리 중" + if (attempt > 0) " (${attempt + 1}번째)" else "")
                 val t0 = System.currentTimeMillis()
                 try {
-                    val (_, t) = http("POST", "$BASE/v1beta/models/$model:generateContent", key,
-                        body.toString().toByteArray(), mapOf("Content-Type" to "application/json"), limit)
+                    val t = streamPost("$BASE/v1beta/models/$model:streamGenerateContent?alt=sse", key, body.toString().toByteArray(), limit, onPartial)
                     val tm = last
                     log.okTiming = tm
                     log.add("${label(model)} #${attempt + 1}", System.currentTimeMillis() - t0, "성공 · " + timingText(tm), true, tm)
