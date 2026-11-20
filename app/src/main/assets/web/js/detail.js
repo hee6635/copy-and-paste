@@ -140,9 +140,10 @@ function renderTabs(it) {
     const tools = it.commentBusy ? '<div class="none">댓글 가져오는 중…</div>'
       : !cs.length && it.commentError ? `<div class="cmtx"><b>댓글을 못 가져왔어요</b><div class="why">${esc(String(it.commentError).split('\n')[0])}</div><div class="bt"><button class="chip dark" data-refetch>다시 가져오기</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>`
       : !cs.length ? `<div class="cmtx"><div class="none">댓글이 없어요</div>${ref ? '<button class="chip" data-refetch>다시 가져오기</button>' : ''}</div>` : '';
-    const ordered = cs.filter(c => c.star).concat(cs.filter(c => !c.star));
-    body = tools || ordered.map((c, i) => `<div class="cmt${c.star ? ' star' : ''}"><div class="h"><b>${c.star ? '★ ' : ''}@${esc(c.a)}</b><span>♡ ${c.l || 0}</span></div><p>${esc(c.t)}</p>
-      ${(c.r || []).map(r => `<div class="rep"><div class="h"><b>@${esc(r.a)}${r.own ? '<span class="own">작성자</span>' : ''}</b><span>♡ ${r.l || 0}</span></div><p>${esc(r.t)}</p></div>`).join('')}</div>`).join('') + (ref ? '<button class="refetch" data-refetch>댓글 다시 가져오기</button>' : '');
+    const ordered = cs.filter(c => c.star).concat(cs.filter(c => !c.star && !cmtJunk(c)), cs.filter(c => !c.star && cmtJunk(c)));
+    const nTop = ordered.filter(c => c.star || !cmtJunk(c)).length;
+    body = tools || ordered.map((c, i) => (i === nTop ? `<button class="more" data-cmtmore>나머지 ${ordered.length - nTop}개 보기</button><div class="hide" id="cmtRest">` : '') + `<div class="cmt${c.star ? ' star' : ''}"><div class="h"><b>${c.star ? '★ ' : ''}@${esc(c.a)}</b><span>♡ ${c.l || 0}</span></div><p>${esc(c.t)}</p>
+      ${(c.r || []).map(r => `<div class="rep"><div class="h"><b>@${esc(r.a)}${r.own ? '<span class="own">작성자</span>' : ''}</b><span>♡ ${r.l || 0}</span></div><p>${esc(r.t)}</p></div>`).join('')}</div>`).join('') + (ordered.length > nTop ? '</div>' : '') + (ref ? '<button class="refetch" data-refetch>댓글 다시 가져오기</button>' : '');
   }
   $('#dBody').innerHTML = `<div class="sec">${body}</div>`;
   $('#dRun').innerHTML = runInfoHtml(it) ? `<div class="sec">${runInfoHtml(it)}</div>` : '';
@@ -199,7 +200,7 @@ function renderMedia(it) {
       (ph.length > 1 ? `<div class="pdots">${ph.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : '');
   }
   if (!ph.length || ph.length === 1 && it.thumb === 'thumb.jpg') {
-    if (it.platform === 'instagram' && !it.video) h += `<div class="sec getph">${it.photoBusy ? '<span class="dot"></span><b>사진 가져오는 중</b>' : `<b>${it.photoError ? '사진을 못 가져왔어요' : '사진을 전부 가져올까요'}</b><button class="chip dark" data-igphotos>사진 가져오기</button>`}</div>`;
+    if (it.platform === 'instagram' && !it.video && !it.duration && !/릴스|영상/.test(it.kind || '')) h += `<div class="sec getph">${it.photoBusy ? '<span class="dot"></span><b>사진 받는 중</b>' : `<b>${it.photoError ? '사진을 못 받았어요' : ph.length ? '사진이 1장만 있어요' : '사진이 아직 없어요'}</b><button class="chip dark" data-igphotos>${it.photoError ? '다시 받기' : '게시물 사진 전부 받기'}</button>`}</div>`;
   }
   el.innerHTML = h;
   const g = $('#dPhotos');
@@ -211,3 +212,9 @@ function renderMedia(it) {
 document.addEventListener('click', e => {
   if (e.target.closest('[data-igphotos]') && cur) { const it = byId(cur); it.photoBusy = true; renderMedia(it); A.igPhotos && A.igPhotos(cur); }
 });
+
+/** 쓸모없어 보이는 댓글: 정보 ★ · 작성자 답글이 없고, @태그 · 이모지 · ㅋㅋ 빼면 8자도 안 됨 */
+function cmtJunk(c) {
+  if ((c.r || []).some(r => r.own)) return false;
+  return String(c.t || '').replace(/@\S+/g, '').replace(/[\p{Extended_Pictographic}\s!?.,~ㅋㅎㅠㅜ♡❤️]/gu, '').length < 8;
+}

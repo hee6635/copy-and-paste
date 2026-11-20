@@ -103,6 +103,7 @@ document.addEventListener('click', e => {
   const dm = t.closest('[data-dm]'); if (dm) return setDockMode(dm.dataset.dm);
   const ex = t.closest('[data-askex]'); if (ex) return sendAsk(ex.dataset.askex);
   const arw = t.closest('.arow, .simc'); if (arw) return openDetail(arw.dataset.id);
+  if (t.closest('[data-cmtmore]')) { $('#cmtRest').classList.remove('hide'); t.closest('[data-cmtmore]').remove(); return; }
   const pg = t.closest('[data-pane-go]'); if (pg) { curPane = pg.dataset.paneGo; renderPanes(byId(cur)); return; }
   if (t.closest('[data-vshow]')) { showVideo(true); return; }
   const mp = t.closest('[data-map]'); if (mp) { A.open('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(mp.dataset.map)); return; }
