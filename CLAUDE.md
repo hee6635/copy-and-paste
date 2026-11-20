@@ -13,7 +13,7 @@
   - 화면 js (index.html 에서 이 순서로 불러옴, 서로 맨 위 변수 · 함수를 같이 씀):
     dev.js(가짜 브리지) → core.js(공통) → home.js → save.js → detail.js → ai.js → capture.js → settings.js → ask.js(질문) → slides.js → tidy.js(한 장씩 정리) → main.js(소식 · 누르기 · 시작, 맨 마지막)
   - Kotlin: SaveService.kt(저장 순서 · 영상/웹 읽기) · VideoDl.kt(영상 받기 · 소리 형식) · AiJob.kt(AI 정리 · 자동 캡처) · AiRetry.kt(실패하면 자동 다시) · Manual.kt(제미나이 앱 반자동) · Gemini.kt(+ GeminiPrompt.kt 요청 글 · GeminiMore.kt 목차 · 질문 · 검사) · JsonFix.kt(끊긴 답 살리기) · Ig.kt(인스타) · IgPhotos.kt(사진 게시물) · Ocr.kt(글자 읽기 · 장면 자르기)
-    · Diag.kt(검사) · Store.kt(데이터) · Common.kt(Events · Tools · Prefs) · PhoneState.kt · MainActivity.kt(브리지) · LoginActivity.kt
+    · Diag.kt(검사) · Store.kt(데이터) · Common.kt(Events · Tools · Prefs) · PhoneState.kt · MainActivity.kt(브리지) · PlayerActivity.kt(기본 플레이어) · LoginActivity.kt
   - 데이터: files/data/items.json · meta.json(폴더 · 순서) + files/items/<id>/
   - 새 기능은 맞는 파일에 넣고, 한 파일이 400~500줄을 넘으면 나눈다.
 - 화면은 컴퓨터 브라우저에서 가짜 데이터로 열어 볼 수 있다 (app.js 의 devBridge).

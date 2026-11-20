@@ -107,7 +107,8 @@ document.addEventListener('click', e => {
   const arw = t.closest('.arow, .simc'); if (arw) return openDetail(arw.dataset.id);
   if (t.closest('[data-cmtmore]')) { $('#cmtRest').classList.remove('hide'); t.closest('[data-cmtmore]').remove(); return; }
   const pg = t.closest('[data-pane-go]'); if (pg) { curPane = pg.dataset.paneGo; renderPanes(byId(cur)); return; }
-  if (t.closest('[data-vshow]')) { showVideo(true); return; }
+  if (t.closest('[data-vshow]')) { const it = byId(cur); if (it.playNative) return playNative(it, 0); showVideo(true); return; }
+  if (t.closest('[data-vnative]')) return playNative(byId(cur), ($('#dVideo') || {}).currentTime || 0);
   const mp = t.closest('[data-map]'); if (mp) { A.open('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(mp.dataset.map)); return; }
   const ru = t.closest('[data-route]'); if (ru) { A.open(ru.dataset.route); return; }
   if (t.closest('[data-slides]')) return openSlides();
@@ -131,7 +132,9 @@ document.addEventListener('click', e => {
     chk.classList.toggle('on', a.includes(n)); A.update(cur, JSON.stringify({ checks: it.checks })); return;
   }
   const sk = t.closest('[data-seek]'); if (sk) {
-    const v = showVideo(false); const sec = Math.floor(+sk.dataset.seek); const it = byId(cur);
+    const sec = Math.floor(+sk.dataset.seek); const it = byId(cur);
+    if (it && it.video && it.playNative) return playNative(it, sec);
+    const v = showVideo(false);
     if (v) { v.currentTime = sec; v.play().catch(() => {}); $('#dScroll').scrollTo({ top: 0, behavior: 'smooth' }); }
     else if (it && it.platform === 'youtube') { const m = it.url.match(/(?:youtu\.be\/|\/shorts\/|[?&]v=)([A-Za-z0-9_-]{11})/); A.open(m ? 'https://www.youtube.com/watch?v=' + m[1] + '&t=' + sec + 's' : it.url); }
     else toast('영상을 저장하지 않아서 ' + fmtT(sec) + ' 장면은 원본에서 봐 주세요');

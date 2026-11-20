@@ -350,7 +350,7 @@ class SaveService : Service() {
         val item = Store.get(this, id) ?: return
         try {
             val name = downloadVideoFile(id, item.optString("url")) ?: throw IllegalStateException("영상 파일이 안 생겼어요")
-            emit(Store.patch(this, id) { it.put("status", "done"); it.remove("stage"); it.remove("longSkipped"); it.remove("videoError"); it.put("video", name); it.put("videoAt", System.currentTimeMillis()); it.put("videoSize", File(Store.dir(this, id), name).length()) })
+            emit(Store.patch(this, id) { it.put("status", "done"); it.remove("stage"); it.remove("longSkipped"); it.remove("videoError"); it.remove("playNative"); it.put("video", name); it.put("videoAt", System.currentTimeMillis()); it.put("videoSize", File(Store.dir(this, id), name).length()) })
         } catch (e: Throwable) {
             emit(Store.patch(this, id) { it.put("status", "done"); it.remove("stage"); it.put("videoError", friendly(e.message ?: e.toString())) })
         }

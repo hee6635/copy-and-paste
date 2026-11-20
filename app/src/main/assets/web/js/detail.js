@@ -234,17 +234,25 @@ const canGetVideo = it => (it.platform === 'youtube' || it.platform === 'instagr
 const VERR = { 1: '재생이 중단됐어요', 2: '파일을 받다가 끊겼어요', 3: '영상 형식을 풀지 못했어요', 4: '앱 화면이 이 영상 파일을 열지 못했어요' };
 function watchVideo(it) {
   const v = $('#dVideo'); if (!v) return;
+  let played = false;
   const show = why => {
     if ($('#dVfail')) return;
+    // 앱 화면이 못 푸는 영상 → 기본 플레이어로 (이 메모는 다음부터 바로)
+    if (!it.playNative) { it.playNative = true; A.update(it.id, JSON.stringify({ playNative: true })); }
+    if (played) playNative(it, v.currentTime || 0);
     const d = document.createElement('div');
     d.id = 'dVfail'; d.className = 'sec warn';
     const af = it.audioFmt && it.audioFmt !== 'AAC-LC' ? `<div class="why">소리 형식: ${esc(it.audioFmt)}${it.audioFmt === 'xHE-AAC' ? ' (인스타 새 형식 · 앱 화면이 못 풀어요, 갤러리에선 돼요)' : ''}</div>` : '';
-    d.innerHTML = `<div class="cmtx"><b>앱에서 재생이 안 돼요</b><div class="why">${esc(why)}</div>${af}<div class="bt"><button class="chip dark" data-dlvideo>다시 받기</button><button class="chip" data-vsave>갤러리로 저장</button></div></div>`;
+    d.innerHTML = `<div class="cmtx"><b>앱 화면에서 재생이 안 돼서 기본 플레이어로 열어요</b><div class="why">${esc(why)}</div>${af}<div class="bt"><button class="chip dark" data-vnative>기본 플레이어로 보기</button><button class="chip" data-dlvideo>다시 받기</button></div></div>`;
     $('#dVid').before(d);
   };
   v.addEventListener('error', () => { const e = v.error; show((VERR[e && e.code] || '알 수 없는 오류') + (e && e.message ? ' · ' + e.message : '') + (e ? ' (코드 ' + e.code + ')' : '')); });
   // 오류 없이 1초 만에 처음으로 돌아가는 경우: 재생을 눌렀는데 4초 뒤에도 거의 안 나갔으면
+  v.addEventListener('play', () => { played = true; }, { once: true });
   v.addEventListener('play', () => setTimeout(() => {
     if (v.isConnected && v.currentTime < 1.5 && (v.paused || v.readyState < 3)) show(`재생이 시작되자마자 멈췄어요 (읽은 정도 ${v.readyState}/4 · 받기 상태 ${v.networkState} · ${Math.round(v.currentTime * 10) / 10}초)`);
   }, 4000));
 }
+
+/** 안드로이드 기본 플레이어로 재생 (갤러리와 같은 방식) */
+function playNative(it, t) { const v = $('#dVideo'); if (v) v.pause(); A.playNative(it.id, it.video, Math.max(0, +t || 0)); }
