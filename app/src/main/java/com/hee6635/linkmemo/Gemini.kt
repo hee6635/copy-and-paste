@@ -298,7 +298,7 @@ object Gemini {
             if (e is KeyBad || !video || !fallback) throw AiFail(explain(e), log.json(null))
             log.add("영상 없이 다시", 0, "영상으로 실패: " + explain(e).lineSequence().first().substringBefore(" →"), false)
             onStage("영상 없이 글만으로 다시 정리 중")
-            try { organizeImpl(ctx, key, item, folders, onStage, log, null, null, onPartial, noVideo = true).put("noVideo", true) }
+            try { organizeImpl(ctx, key, item, folders, onStage, log, null, null, onPartial, noVideo = true).put("noVideo", true).put("noVideoWhy", explain(e).lineSequence().first().substringBefore(" →")) }
             catch (e2: Throwable) { throw AiFail(if (cancelled) "중지했어요" else explain(e2), log.json(null)) }
         }
     }

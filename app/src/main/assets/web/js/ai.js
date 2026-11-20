@@ -16,7 +16,7 @@ function renderAi(it) {
       <div class="bt"><button class="chip dark" data-airedo>다시 정리</button><button class="chip" data-manual>제미나이 앱으로</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>${logHtml(it.aiLog, true)}</div>` : '';
     return;
   }
-  let h = deepHtml(it);
+  let h = deepHtml(it) + warnHtml(ai);
   const sum = ai.summary || [];
   const places = (ai.places || []).filter(p => p && p.name);
   const pName = esc(ai.listName || '장소');
@@ -318,4 +318,11 @@ const srcChip = (it, i) => { const f = ((it.ai && it.ai.sumFrom) || [])[i]; retu
 function runInfoHtml(it) {
   const ai = it.ai; if (!ai || !ai.log) return '';
   return `<button class="runinfo" data-runlog>AI ${fmtMs(ai.log.total)} · ${esc(mLabel(ai.model))}${(ai.log.why || []).length ? ' · 오래 걸린 이유 ' + ai.log.why.length : ''}<svg class="ic" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button><div class="runlog hide">${logHtml(ai.log)}</div>`;
+}
+
+/** 성공처럼 보이지만 덜 된 결과: 영상을 못 보고 글만으로 · 답이 중간에 끊김 */
+function warnHtml(ai) {
+  const w = ai.noVideo && !ai.light ? ['영상을 못 보고 글만으로 정리했어요', ai.noVideoWhy || '', '영상으로 다시']
+    : ai.cut ? ['답이 중간에 끊겨 일부만 보여요', ai.cut, '다시 정리'] : null;
+  return w ? `<div class="sec warn"><div class="cmtx"><b>${w[0]}</b>${w[1] ? `<div class="why">${esc(w[1])}</div>` : ''}<div class="bt"><button class="chip dark" data-airedo>${w[2]}</button><button class="chip" data-pane-go="orig">기록 보기</button></div></div></div>` : '';
 }

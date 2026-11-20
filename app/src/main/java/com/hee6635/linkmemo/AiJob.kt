@@ -121,6 +121,7 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
         // 2단계 — 링크만 저장한 것도 영상 보기: 유튜브는 링크 그대로, 인스타는 잠깐 받아서
         var temp: File? = null; var yt: String? = null
         val pre = mutableListOf<Triple<String, Long, String>>()
+        var dlFail: String? = null   // 인스타 영상을 못 받아 글만으로 정리하게 된 이유
         val url = item.optString("url")
         if (item.optString("video").isEmpty() && Gemini.watch(this) && !hasPhotos) when (SaveService.platformOf(url)) {
             "youtube" -> yt = Gemini.ytWatchUrl(url)
@@ -131,7 +132,8 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
                     temp = tempVideo(id, url)
                     pre += Triple("영상 잠깐 받기", System.currentTimeMillis() - t0, String.format(java.util.Locale.US, "%.1fMB (정리 뒤 지움)", (temp?.length() ?: 0) / 1e6))
                 } catch (e: Throwable) {
-                    pre += Triple("영상 잠깐 받기", System.currentTimeMillis() - t0, "실패 → 글만 보고 정리: " + friendly(e.message ?: e.toString()))
+                    dlFail = friendly(e.message ?: e.toString())
+                    pre += Triple("영상 잠깐 받기", System.currentTimeMillis() - t0, "실패 → 글만 보고 정리: " + dlFail)
                 }
             }
         }
@@ -153,6 +155,7 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
         } catch (e: Throwable) { stopOcr.set(true); side.join(60000); temp?.delete(); holder[0]?.delete(); throw e }
         stopOcr.set(true)
         side.join(60000)
+        dlFail?.let { if (!ai.has("noVideo")) ai.put("noVideo", true).put("noVideoWhy", "인스타 영상 받기 실패: " + it) }
         if (temp == null && holder[0] != null) temp = holder[0]
         // AI 가 고른 중요 장면 자동 캡처 (영상 파일이 있을 때: 저장한 영상 · 잠깐 받은 영상 · 유튜브는 작게 잠깐 받기)
         val shots = JSONArray()
