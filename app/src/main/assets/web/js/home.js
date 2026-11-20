@@ -140,9 +140,24 @@ function cardHtml(it) {
     <div class="cs">${esc(PLAT[it.platform] || '')}${it.author ? ' · ' + esc(it.author) : ''}</div>${memo}${folder}${it.aiBusy ? `<span class="tag busy">AI <span data-since="${it.aiBusyAt || Date.now()}">${since(it.aiBusyAt)}</span></span>` : ''}</div></button>`;
 }
 
+// 카드 크기: 크게(원래 비율) → 작게(16:9) → 글만 · 고른 것 기억
+let cardSize = localStorage.getItem('cardSize') || 'big';
+const SIZE_IC = {
+  big: '<svg class="ic" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="10" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="16" width="7" height="4" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>',
+  small: '<svg class="ic" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="5" rx="1.5"/><rect x="13" y="4" width="7" height="5" rx="1.5"/><rect x="4" y="12" width="7" height="5" rx="1.5"/><rect x="13" y="12" width="7" height="5" rx="1.5"/></svg>',
+  text: '<svg class="ic" viewBox="0 0 24 24"><path d="M5 6h14M5 10h10M5 14h14M5 18h10"/></svg>'
+};
+function nextCardSize() {
+  cardSize = { big: 'small', small: 'text', text: 'big' }[cardSize];
+  localStorage.setItem('cardSize', cardSize);
+  renderHome();
+  toast({ big: '크게', small: '작게', text: '글만' }[cardSize]);
+}
+
 function visible() { return sorted(items.filter(it => it.status === 'done' && matches(it))); }
 
 function renderHome() {
+  document.body.dataset.cs = cardSize; $('#btnSize').innerHTML = SIZE_IC[cardSize];
   renderChips();
   renderCats();
   $('#jobs').innerHTML = selecting ? '' : items.filter(it => it.status === 'saving' || it.status === 'error').map(jobHtml).join('');
@@ -150,7 +165,7 @@ function renderHome() {
   // 두 줄에 높이가 비슷하게 나누기 (순서대로 왼쪽 · 오른쪽 중 짧은 쪽)
   const cols = [[], []], h = [0, 0];
   list.forEach(it => {
-    const est = (it.thumb ? (it.w && it.h ? Math.min(1.78, Math.max(.75, it.h / it.w)) : 1.2) * 170 : 0) + 90 + (it.memo ? 34 : 0);
+    const est = (it.thumb && cardSize !== 'text' ? (cardSize === 'small' ? .5625 : it.w && it.h ? Math.min(1.78, Math.max(.75, it.h / it.w)) : 1.2) * 170 : 0) + 90 + (it.memo ? 34 : 0);
     const k = h[0] <= h[1] ? 0 : 1; cols[k].push(it); h[k] += est;
   });
   const colsEl = $('#grid').children;

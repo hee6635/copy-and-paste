@@ -23,7 +23,7 @@ function renderAi(it) {
   const sugg = ai.folder && ai.folder.trim() && fPath(it.folder) !== ai.folder.trim() ? ai.folder.trim() : '';
   const ck = it.checks || {};
   const rec = ai.kind === 'recipe' && ai.recipe && ((ai.recipe.ingredients || []).length || (ai.recipe.steps || []).length) ? ai.recipe : null;
-  const runinfo = ai.log ? `<button class="runinfo" data-runlog>${fmtMs(ai.log.total)} · ${esc(mLabel(ai.model))}${(ai.log.why || []).length ? ' · 오래 걸린 이유 ' + ai.log.why.length : ''}<svg class="ic" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button><div class="runlog hide">${logHtml(ai.log)}</div>` : '';
+  const runinfo = '';
   const redo = (canSlide(it) ? '<button class="slbtn" data-slides>▶ 슬라이드</button>' : '') + '<button class="ai" data-airedo aria-label="다시 정리">AI ↻</button>';
   const suggHtml = sugg ? `<div class="sugg"><div class="t">폴더 추천 <b>${esc(sugg)}</b></div><button data-sugg>옮기기</button></div>` : '';
   const tipsTitle = places.length || rec ? '꼭 알아둘 팁' : '요약';
@@ -32,16 +32,16 @@ function renderAi(it) {
   const chs = (ai.chapters || []).filter(c => c && c.title);
   if (chs.length) {
     h += longNote + `<div class="sec"><div class="sh"><b>꼭 알아둘 팁</b>${redo}</div>${runinfo}
-      ${sum.map(x => `<div class="tip3"><b>·</b><span>${rich(x)}</span></div>`).join('')}${suggHtml}</div>`;
+      ${sum.map((x, i) => `<div class="tip3">${srcChip(it, i) || '<b>·</b>'}<span>${rich(x)}</span></div>`).join('')}${suggHtml}</div>`;
     h += `<div class="sec"><div class="sh"><b>목차 ${chs.length}</b>${(it.ytChapters || []).length ? '<span class="badge2">유튜버 목차</span>' : ''}</div>${chs.map((c, i) => chapterRow(it, chs, i)).join('')}</div>`;
-    if (places.length) h += `<div class="sec"><div class="sh"><b>${pName} ${places.length}</b></div>${places.map((p, i) => placeRow(it, p, i)).join('')}</div>`;
+    if (places.length) h += `<div class="sec"><div class="sh"><b>${pName} ${places.length}</b></div>${places.map((p, i) => placeRow(it, p, i)).join('')}${routeHtml(it, places)}</div>`;
     if (it.aiError) h += `<div class="sec"><div class="cmtx"><div class="why">다시 정리 실패: ${esc(String(it.aiError).split('\n')[0])}</div></div></div>`;
     el.innerHTML = h;
     return;
   }
   h += longNote;
   if (places.length) {
-    h += `<div class="sec"><div class="sh"><b>${pName} ${places.length}</b>${redo}</div>${runinfo}${places.map((p, i) => placeRow(it, p, i)).join('')}</div>`;
+    h += `<div class="sec"><div class="sh"><b>${pName} ${places.length}</b>${redo}</div>${runinfo}${places.map((p, i) => placeRow(it, p, i)).join('')}${routeHtml(it, places)}</div>`;
   } else if (rec) {
     const f = srvF(it);
     h += `<div class="sec"><div class="sh"><b>재료 ${(rec.ingredients || []).length}</b><span class="shr">${srvHtml(it, rec)}${redo}</span></div>${runinfo}
@@ -51,7 +51,7 @@ function renderAi(it) {
   if (sum.length || sugg) {
     const isTop = !places.length && !rec;
     h += `<div class="sec"><div class="sh"><b>${tipsTitle}</b>${isTop ? redo : ''}</div>${isTop ? runinfo : ''}
-      ${isTop ? sum.map((x, i) => sumCard(it, x, i)).join('') : sum.map((x, i) => `<div class="tip3"><b>·</b><span>${rich(x)}</span></div>${attHtml(it, 'summary', i)}`).join('')}
+      ${isTop ? sum.map((x, i) => sumCard(it, x, i)).join('') : sum.map((x, i) => `<div class="tip3">${srcChip(it, i) || '<b>·</b>'}<span>${rich(x)}</span></div>${attHtml(it, 'summary', i)}`).join('')}
       ${suggHtml}</div>`;
   }
   const facts = (ai.facts || []).filter(f => f && f.text);
@@ -114,7 +114,8 @@ function placeRow(it, p, i) {
   const c = (it.captures || []).find(c => c.at && c.at.sec === 'places' && +c.at.i === i);
   const th = c ? `<button class="th2" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><i>${i + 1}</i></button>` : `<div class="th2 n"><i>${i + 1}</i></div>`;
   const need = p.need === 'must' ? '<em class="need">필수</em>' : p.need === 'skip' ? '<em class="need">필요 없음</em>' : '';
-  return `<div class="pr${p.need === 'skip' ? ' skip' : ''}">${th}<div class="pb"><b><span>${esc(p.name)}${need}</span>${+p.t >= 0 ? `<button class="tm" data-seek="${+p.t}">${fmtT(p.t)}</button>` : ''}</b><p>${rich(p.info || '')}</p></div></div>`;
+  const pin = it.ai && !it.ai.listName ? `<button class="pin" data-map="${esc(mapQ(it, p))}" aria-label="지도에서 보기"><svg class="ic" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg></button>` : '';
+  return `<div class="pr${p.need === 'skip' ? ' skip' : ''}${pin ? ' haspin' : ''}">${th}<div class="pb"><b><span>${esc(p.name)}${need}</span>${+p.t >= 0 ? `<button class="tm" data-seek="${+p.t}">${fmtT(p.t)}</button>` : ''}</b><p>${rich(p.info || '')}</p></div>${pin}</div>`;
 }
 function stepRow(it, x, i) {
   const c = (it.captures || []).find(c => c.at && c.at.sec === 'steps' && +c.at.i === i);
@@ -127,7 +128,7 @@ function sumCard(it, x, i) {
   const cs = (it.captures || []).filter(c => c.at && c.at.sec === 'summary' && +c.at.i === i);
   const big = cs[0], rest = cs.slice(1);
   return `<div class="scard">${big ? `<button class="sbig" data-cap="${esc(big.id)}"><img src="${fileUrl(it.id, big.file)}" alt=""><span class="tc">${fmtT(big.t)}</span>${big.ai ? '<span class="aib">AI</span>' : ''}</button>` : ''}
-    <div class="stx">${rich(x)}</div>${rest.length ? `<div class="att in">${rest.map(c => `<button class="shot" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}</button>`).join('')}</div>` : ''}</div>`;
+    <div class="stx">${srcChip(it, i)}${rich(x)}</div>${rest.length ? `<div class="att in">${rest.map(c => `<button class="shot" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}</button>`).join('')}</div>` : ''}</div>`;
 }
 
 // ── AI 가 쓰는 중: 설명 → 받아쓰기 → 중요한 줄 → 요약 카드 (주르륵) ──
@@ -291,4 +292,30 @@ function deepHtml(it) {
   if (!ai.deepError) return '';
   const when = it.aiRetryAt > Date.now() ? hm(it.aiRetryAt) + '쯤 영상 다시 볼게요' : '영상 자세히 보기 실패';
   return `<div class="sec deep"><b>${when}</b><button class="chip dark" data-airedo>지금 다시</button></div>`;
+}
+
+// ── 지도 · 출처 · 기록 ──
+const mapQ = (it, p) => [p.name, (it.ai && it.ai.area) || ''].join(' ').trim();
+/** 간 곳 경로: 구글 지도 길찾기 링크 · 한 링크에 10곳씩 (공식 한도를 못 찾아 앱 기준 10곳) */
+function routeLinks(it, places) {
+  const q = places.map(p => mapQ(it, p)), out = [];
+  for (let a = 0; a < q.length - 1; a += 9) {
+    const seg = q.slice(a, a + 10);
+    const u = 'https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(seg[0]) + '&destination=' + encodeURIComponent(seg[seg.length - 1]) +
+      (seg.length > 2 ? '&waypoints=' + encodeURIComponent(seg.slice(1, -1).join('|')) : '');
+    out.push([a + 1, a + seg.length, u]);
+  }
+  return out;
+}
+function routeHtml(it, places) {
+  if (!it.ai || it.ai.listName || places.length < 2) return '';
+  const ls = routeLinks(it, places);
+  return `<div class="route">${ls.map(([a, b, u]) => `<button class="chip dark" data-route="${esc(u)}"><svg class="ic" viewBox="0 0 24 24"><path d="M6 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM6 15V9a3 3 0 0 1 3-3h7M18 9v6a3 3 0 0 1-3 3H8"/></svg>경로 보기${ls.length > 1 ? ' ' + a + '–' + b : ''}</button>`).join('')}</div>`;
+}
+/** 요약 줄 출처 (영상 · 본문 · 댓글 · 작성자 댓글 · 사진) */
+const srcChip = (it, i) => { const f = ((it.ai && it.ai.sumFrom) || [])[i]; return f ? `<span class="k">${esc(f)}</span>` : ''; };
+/** AI 가 걸린 시간 · 모델 · 기록 (원본 탭 맨 위) */
+function runInfoHtml(it) {
+  const ai = it.ai; if (!ai || !ai.log) return '';
+  return `<button class="runinfo" data-runlog>AI ${fmtMs(ai.log.total)} · ${esc(mLabel(ai.model))}${(ai.log.why || []).length ? ' · 오래 걸린 이유 ' + ai.log.why.length : ''}<svg class="ic" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button><div class="runlog hide">${logHtml(ai.log)}</div>`;
 }

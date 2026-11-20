@@ -2,6 +2,7 @@
 /* 내 저장함에 질문하기: 메모 목록을 짧게 묶어 Gemini 에 보내고, 답 + 근거 메모를 보여 줌 */
 let askHist = [];      // {q, a, refs, error, pending}
 let dockMode = 'save';
+let askScope = null;   // 상세에서 물으면 그 메모 id
 
 function setDockMode(m) {
   dockMode = m;
@@ -14,6 +15,7 @@ function setDockMode(m) {
 
 /** 질문에 맞는 메모를 먼저 골라 짧게 (최대 120개) */
 function askContext(q) {
+  if (askScope) return askOne(byId(askScope));
   const words = q.toLowerCase().split(/\s+/).filter(w => w.length >= 2);
   const done = items.filter(it => it.status === 'done');
   const scored = done.map(it => { const h = hayOf(it) + ' ' + (it.title || '').toLowerCase(); return { it, sc: words.reduce((a, w) => a + (h.includes(w) ? 1 : 0), 0) }; })
@@ -61,4 +63,18 @@ function renderAsk() {
   el.innerHTML = askHist.map((h, i) => `<div class="qb">${esc(h.q)}</div>
     <div class="ab2">${h.pending ? '<div class="watch"><i></i>찾는 중…</div>' : h.error ? `<div class="why">${esc(h.error)}</div>` : `<p class="p" data-ans="${i}">${rich(h.a || '')}</p>${(h.refs || []).map(refRow).join('')}`}</div>`).join('');
   el.scrollTop = el.scrollHeight;
+}
+
+/** 상세에서 묻기: 이 메모 하나만 자세히 보내기 (메모가 바뀌면 대화 새로) */
+function askFor(id, q) {
+  if (askScope !== id) askHist = [];
+  askScope = id;
+  openAsk(q);
+}
+function askOne(it) {
+  if (!it) return '[]';
+  const ai = it.ai || {}, cut = (x, n) => String(x || '').slice(0, n);
+  return JSON.stringify([{ id: it.id, t: it.title, f: fPath(it.folder), url: it.url, ai: { summary: ai.summary, places: ai.places, facts: ai.facts, tips: ai.tips, recipe: ai.recipe, checklist: ai.checklist },
+    desc: cut(it.desc, 3000), body: cut(it.body, 6000), memo: it.memo || '', ts: (ai.transcript || []).map(x => x.text).join(' ').slice(0, 6000),
+    cmt: (it.comments || []).slice(0, 30).map(c => c.t).join(' / ').slice(0, 3000) }]);
 }

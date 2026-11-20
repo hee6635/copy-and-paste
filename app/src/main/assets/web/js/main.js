@@ -80,7 +80,7 @@ window.App = {
 document.addEventListener('click', e => {
   const t = e.target;
   if (lpFired) { lpFired = false; return; }
-  const card = t.closest('.card'); if (card) return selecting ? toggleSel(card.dataset.id) : openDetail(card.dataset.id);
+  const card = t.closest('.card'); if (card) return selecting ? toggleSel(card.dataset.id) : openDetail(card.dataset.id, card);
   const ct = t.closest('[data-cat]'); if (ct) { cat = cat === ct.dataset.cat ? '' : ct.dataset.cat; renderHome(); return; }
   const ft = t.closest('[data-ft]'); if (ft) { fTop = ft.dataset.ft; fSub = ''; renderHome(); return; }
   const fs = t.closest('[data-fs]'); if (fs) { fSub = fs.dataset.fs; renderHome(); return; }
@@ -102,7 +102,11 @@ document.addEventListener('click', e => {
   const lm = t.closest('[data-lim]'); if (lm) { const m = lm.dataset.lim; return ask(mLabel(m) + ' 하루 한도', '한도 (번)', v => { const n = parseInt(v, 10); if (n > 0) { A.setLimit(m, n); renderUsage(); } }, lm.dataset.v); }
   const dm = t.closest('[data-dm]'); if (dm) return setDockMode(dm.dataset.dm);
   const ex = t.closest('[data-askex]'); if (ex) return sendAsk(ex.dataset.askex);
-  const arw = t.closest('.arow'); if (arw) return openDetail(arw.dataset.id);
+  const arw = t.closest('.arow, .simc'); if (arw) return openDetail(arw.dataset.id);
+  const pg = t.closest('[data-pane-go]'); if (pg) { curPane = pg.dataset.paneGo; renderPanes(byId(cur)); return; }
+  if (t.closest('[data-vshow]')) { showVideo(true); return; }
+  const mp = t.closest('[data-map]'); if (mp) { A.open('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(mp.dataset.map)); return; }
+  const ru = t.closest('[data-route]'); if (ru) { A.open(ru.dataset.route); return; }
   if (t.closest('[data-slides]')) return openSlides();
   if (t.closest('#sUsage')) return openUsage();
   if (t.closest('#sBackup')) return A.backup(false);
@@ -124,7 +128,7 @@ document.addEventListener('click', e => {
     chk.classList.toggle('on', a.includes(n)); A.update(cur, JSON.stringify({ checks: it.checks })); return;
   }
   const sk = t.closest('[data-seek]'); if (sk) {
-    const v = $('#dVideo'); const sec = Math.floor(+sk.dataset.seek); const it = byId(cur);
+    const v = showVideo(false); const sec = Math.floor(+sk.dataset.seek); const it = byId(cur);
     if (v) { v.currentTime = sec; v.play(); $('#dScroll').scrollTo({ top: 0, behavior: 'smooth' }); }
     else if (it && it.platform === 'youtube') { const m = it.url.match(/(?:youtu\.be\/|\/shorts\/|[?&]v=)([A-Za-z0-9_-]{11})/); A.open(m ? 'https://www.youtube.com/watch?v=' + m[1] + '&t=' + sec + 's' : it.url); }
     else toast('영상을 저장하지 않아서 ' + fmtT(sec) + ' 장면은 원본에서 봐 주세요');
@@ -194,7 +198,7 @@ $('#cfYes').onclick = () => { closeSheet('confirmSheet'); cfCb && cfCb(); };
 
 $('#paste').addEventListener('input', pasteState);
 $('#pasteGo').onclick = () => {
-  if (dockMode === 'ask') { const q = $('#paste').value.trim(); if (!q) return; $('#paste').value = ''; pasteState(); return openAsk(q); }
+  if (dockMode === 'ask') { const q = $('#paste').value.trim(); if (!q) return; $('#paste').value = ''; pasteState(); if (askScope) { askScope = null; askHist = []; } return openAsk(q); }
   const u = findUrl($('#paste').value); if (u) openSave(u); else toast('링크를 붙여 넣어 주세요');
 };
 $('#askSend').onclick = () => sendAsk($('#askQ').value);
@@ -227,9 +231,9 @@ $('#aCopy').onclick = () => {
   if ((it.comments || []).length) rows.push(['댓글', () => done(it.comments.map((c, i) => (i + 1) + '. @' + c.a + ' ' + c.t + (c.r || []).map(r => '\n   ↳ @' + r.a + (r.own ? ' [작성자]' : '') + ' ' + r.t).join('')).join('\n'), '댓글을')]);
   if (it.memo) rows.push(['내 메모', () => done(it.memo, '메모를')]);
   rows.push(['링크', () => done(it.url, '링크를')]);
+  rows.push(['txt 파일로 보내기', () => A.shareText(it.title || 'memo', itemText(it))]);
   optSheet('복사', rows);
 };
-$('#aTxt').onclick = () => { const it = byId(cur); if (it) A.shareText(it.title || 'memo', itemText(it)); };
 $('#aDel').onclick = () => confirmAsk('이 메모를 지울까요?', '지우기', () => {
   const id = cur; closePage('detail'); A.remove(id); items = items.filter(x => x.id !== id); meta.order = meta.order.filter(x => x !== id); saveMeta(); renderHome();
 });
@@ -256,3 +260,10 @@ $('#cDel').onclick = () => confirmAsk('이 캡처를 지울까요?', '지우기'
 
 load();
 if (!window.Android) window.__dev = { openCrop, liveUpdate, liveStart: (id) => { const it = byId(id); it.aiBusy = 'AI 받아쓰는 중'; it.aiBusyAt = Date.now(); renderDetail(false); } };
+
+// 상세 아래: 이 링크에 대해 물어보기 → 질문 화면을 이 메모로 좁혀서
+$('#dAskF').onsubmit = e => { e.preventDefault(); const q = $('#dAskQ').value.trim(); if (!q || !cur) return; $('#dAskQ').value = ''; askFor(cur, q); };
+// 스크롤하면 제목이 위 막대로
+$('#dScroll').addEventListener('scroll', () => { const h = $('#dScroll .meta h2'); $('#detail .dtop').classList.toggle('tt', !!h && h.getBoundingClientRect().bottom < 60); }, { passive: true });
+
+$('#btnSize').onclick = nextCardSize;

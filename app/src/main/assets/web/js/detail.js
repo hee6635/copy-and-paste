@@ -1,45 +1,88 @@
 'use strict';
 /* 상세: 그리기 · 접기 · 탭 · 내 메모 · 복사용 글 */
 // ── 상세 ──
-function openDetail(id) {
+function openDetail(id, from) {
   const it = byId(id); if (!it) return;
-  cur = id; curTab = it.platform === 'web' ? 'body' : 'desc';
+  cur = id; curTab = it.platform === 'web' ? 'body' : 'desc'; curPane = 'guide';
   renderDetail(true);
   $('#dScroll').scrollTop = 0;
+  $('#detail .dtop').classList.remove('tt');
+  if (from) zoomFrom(from);
   openPage('detail');
 }
 
+/** 카드를 누르면 그 카드 자리에서 상세가 커지며 열림 (transform · opacity 만) */
+function zoomFrom(el) {
+  const d = $('#detail'), r = el.getBoundingClientRect();
+  d.style.transition = 'none'; d.style.transformOrigin = '0 0'; d.style.opacity = '0';
+  d.style.transform = `translate(${r.left}px,${r.top}px) scale(${r.width / innerWidth},${r.height / innerHeight})`;
+  d.offsetWidth;
+  d.style.transition = 'transform .42s var(--ease),opacity .22s';
+  d.style.transform = 'none'; d.style.opacity = '1';
+  setTimeout(() => { ['transition', 'transformOrigin', 'opacity', 'transform'].forEach(k => d.style[k] = ''); }, 460);
+}
+
+// 탭: 가이드 · 캡처 · 원본 (한 화면 안에서 보이기만 바꿈)
+let curPane = 'guide';
+const PLAY = '<svg class="ic" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
 function renderDetail(full) {
   const it = byId(cur); if (!it) return;
-  $('#dTopTitle').textContent = '';
+  $('#dTopTitle').textContent = it.title || '';
   const sc = $('#dScroll');
   if (full || !sc.querySelector('.meta')) {
     let media = '';
     if (it.video) {
-      media = `<div class="video"><video id="dVideo" src="${fileUrl(it.id, it.video)}" ${it.thumb ? `poster="${fileUrl(it.id, it.thumb)}"` : ''} controls playsinline preload="metadata"></video>
+      media = `<div class="video hide" id="dVid"><video id="dVideo" src="${fileUrl(it.id, it.video)}" ${it.thumb ? `poster="${fileUrl(it.id, it.thumb)}"` : ''} controls playsinline preload="metadata"></video>
         <button class="capbtn" id="dCap"><svg class="ic" viewBox="0 0 24 24"><path d="M4 8a1 1 0 0 1 1-1h2.5l1.5-2h6l1.5 2H19a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>캡처</button><div class="flash" id="dFlash"></div></div>`;
     }
     accOpen = {};
-    sc.innerHTML = (media || '<div id="dMedia"></div>') + `<div class="meta"></div><div id="dAi"></div><div id="dTips"></div><div id="dCaps"></div>
-      <button class="acc" data-acc="more">받아쓰기 · 설명 · 댓글 <span><svg class="ic" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></span></button>
-      <div class="accb"><div id="dTabs"></div><div id="dBody"></div></div>
-      <div class="sec"><label class="memo"><small>내 메모</small><textarea id="dMemo" rows="2"></textarea></label></div>`;
+    sc.innerHTML = `<div class="meta"></div>` + (media || '<div id="dMedia"></div>') + `<div id="dPanes"></div>
+      <div data-pane="guide"><div id="dAi"></div><div id="dTips"></div>
+        <div class="sec"><label class="memo"><small>내 메모</small><textarea id="dMemo" rows="2"></textarea></label></div><div id="dSim"></div></div>
+      <div data-pane="caps"><div id="dCaps"></div></div>
+      <div data-pane="orig"><div id="dRun"></div><div id="dTabs"></div><div id="dBody"></div></div>`;
     $('#dMemo').value = it.memo || '';
     autoGrow($('#dMemo'));
   }
+  const th = it.thumb ? `<button class="hthumb" ${it.video ? 'data-vshow' : ''} aria-label="${it.video ? '영상 보기' : '대표 그림'}"><img src="${fileUrl(it.id, it.thumb)}" alt="">${it.video ? PLAY : ''}</button>`
+    : it.video ? `<button class="hthumb n" data-vshow aria-label="영상 보기">${PLAY}</button>` : '';
   sc.querySelector('.meta').innerHTML = `<div class="s">${esc(PLAT[it.platform] || '')}${it.author ? ' · ' + esc(it.author) : ''} · ${fmtD(it.createdAt)}</div>
-    <h2>${esc(it.title || it.url)}</h2>
-    <button class="fchip" id="dFolder"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>${esc(fPath(it.folder) || '폴더 없음')}<svg class="ic chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
+    <div class="hrow"><h2>${esc(it.title || it.url)}</h2>${th}</div>
+    <div class="chiprow"><button class="fchip" id="dFolder"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>${esc(fPath(it.folder) || '폴더 없음')}<svg class="ic chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
     <button class="fchip" id="dCat">${esc(it.category ? catLabel(it.category) : '키워드 없음')}<svg class="ic chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
-    <div class="tags">${(it.tags || []).map(t => `<button class="tg" data-tag="${esc(t)}">#${esc(t)}</button>`).join('')}
+    ${(it.tags || []).map(t => `<button class="tg" data-tag="${esc(t)}">#${esc(t)}</button>`).join('')}
     <button class="add" id="dAddTag" aria-label="태그 추가"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>`;
   if (!it.video) renderMedia(it);
   renderAi(it);
   renderTips(it);
   renderCaps(it);
   renderTabs(it);
+  renderSim(it);
+  renderPanes(it);
   syncAcc();
   $('#aSave').disabled = !it.video;
+}
+
+function renderPanes(it) {
+  const caps = (it.captures || []).length, nc = (it.comments || []).length;
+  const ps = [['guide', '가이드']].concat(it.video || caps ? [['caps', '캡처' + (caps ? ' ' + caps : '')]] : [], [['orig', it.platform === 'web' ? '원본' : '원본 · 댓글' + (nc ? ' ' + nc : '')]]);
+  if (!ps.some(p => p[0] === curPane)) curPane = 'guide';
+  $('#dPanes').innerHTML = `<div class="mtabs">${ps.map(p => `<button data-pane-go="${p[0]}" class="${p[0] === curPane ? 'on' : ''}">${p[1]}</button>`).join('')}</div>`;
+  document.querySelectorAll('#dScroll [data-pane]').forEach(el => el.classList.toggle('hide', el.dataset.pane !== curPane));
+}
+function showVideo(play) { const w = $('#dVid'); if (!w) return null; w.classList.remove('hide'); const v = $('#dVideo'); if (play) v.play(); return v; }
+
+/** 비슷한 메모: 같은 장소 · 태그 · 폴더 · 갈래 (AI 없이 점수로) */
+function renderSim(it) {
+  const el = $('#dSim'); if (!el) return;
+  const pl = new Set(((it.ai && it.ai.places) || []).map(p => p.name)), tg = new Set(it.tags || []);
+  const sim = items.filter(x => x.id !== it.id && x.status === 'done').map(x => {
+    let sc = ((x.ai && x.ai.places) || []).filter(p => pl.has(p.name)).length * 3 + (x.tags || []).filter(t => tg.has(t)).length * 2;
+    if (it.folder && x.folder === it.folder) sc += 2;
+    if (it.category && x.category === it.category) sc += 1;
+    return { x, sc };
+  }).filter(o => o.sc >= 2).sort((a, b) => b.sc - a.sc).slice(0, 6);
+  el.innerHTML = sim.length ? `<div class="simh">비슷한 메모</div><div class="simg">${sim.map(({ x }) => `<button class="simc" data-id="${esc(x.id)}">${x.thumb ? `<img src="${fileUrl(x.id, x.thumb)}" alt="" loading="lazy">` : ''}<b>${esc(x.title || x.url)}</b></button>`).join('')}</div>` : '';
 }
 
 // 접기 · 펼치기 (상세를 열 때마다 접힌 상태로 시작)
@@ -67,11 +110,10 @@ function renderCaps(it) {
   const caps = it.captures || [];
   const el = $('#dCaps');
   if (!it.video && caps.length === 0) { el.innerHTML = ''; return; }
-  el.innerHTML = accHead('caps', '캡처', caps.length) + `<div class="accb"><div class="sec"><div class="shots">
+  el.innerHTML = `<div class="sec"><div class="shots">
     ${caps.map(c => `<button class="shot" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}</button>`).join('')}
     ${it.video ? '<button class="shot plus" id="dCapAdd" aria-label="지금 장면 캡처"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>' : ''}
-  </div></div></div>`;
-  syncAcc();
+  </div></div>`;
 }
 
 function renderTabs(it) {
@@ -103,6 +145,7 @@ function renderTabs(it) {
       ${(c.r || []).map(r => `<div class="rep"><div class="h"><b>@${esc(r.a)}${r.own ? '<span class="own">작성자</span>' : ''}</b><span>♡ ${r.l || 0}</span></div><p>${esc(r.t)}</p></div>`).join('')}</div>`).join('') + (ref ? '<button class="refetch" data-refetch>댓글 다시 가져오기</button>' : '');
   }
   $('#dBody').innerHTML = `<div class="sec">${body}</div>`;
+  $('#dRun').innerHTML = runInfoHtml(it) ? `<div class="sec">${runInfoHtml(it)}</div>` : '';
 }
 
 function longText(s) {
@@ -154,7 +197,7 @@ function renderMedia(it) {
   if (ph.length) {
     h = `<div class="photos" id="dPhotos">${ph.map(p => `<img src="${fileUrl(it.id, p.file)}" alt="" loading="lazy">`).join('')}</div>` +
       (ph.length > 1 ? `<div class="pdots">${ph.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : '');
-  } else if (it.thumb) h = `<div class="video"><img src="${fileUrl(it.id, it.thumb)}" alt=""></div>`;
+  }
   if (!ph.length || ph.length === 1 && it.thumb === 'thumb.jpg') {
     if (it.platform === 'instagram' && !it.video) h += `<div class="sec getph">${it.photoBusy ? '<span class="dot"></span><b>사진 가져오는 중</b>' : `<b>${it.photoError ? '사진을 못 가져왔어요' : '사진을 전부 가져올까요'}</b><button class="chip dark" data-igphotos>사진 가져오기</button>`}</div>`;
   }

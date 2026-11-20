@@ -19,6 +19,7 @@
   </header>
   <header class="top normhead">
     <h1>링크메모</h1>
+    <button class="ib" id="btnSize" aria-label="카드 크기"></button>
     <button class="ib" id="btnTidy" aria-label="한 장씩 정리"><svg class="ic" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="16" rx="3"/><path d="M3 8v8M21 8v8"/></svg></button>
     <button class="ib" id="btnSettings" aria-label="설정"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></button>
   </header>
@@ -48,19 +49,18 @@
 
 <!-- 상세 -->
 <section id="detail" class="page sub" aria-hidden="true">
-  <header class="top c">
+  <header class="top c dtop">
     <button class="ib" data-back aria-label="뒤로"><svg class="ic" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
     <div class="t" id="dTopTitle"></div>
-    <div class="ib"></div>
+    <div class="acts">
+      <button class="ib" id="aOpen" aria-label="링크로 이동"><svg class="ic" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
+      <button class="ib" id="aCopy" aria-label="복사"><svg class="ic" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h9"/></svg></button>
+      <button class="ib" id="aSave" aria-label="원본 저장"><svg class="ic" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></button>
+      <button class="ib danger" id="aDel" aria-label="삭제"><svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+    </div>
   </header>
   <div class="scroll" id="dScroll"></div>
-  <nav class="bar5">
-    <button id="aOpen"><svg class="ic" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>링크로 이동</button>
-    <button id="aSave"><svg class="ic" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>원본 저장</button>
-    <button id="aCopy"><svg class="ic" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h9"/></svg>복사</button>
-    <button id="aTxt"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/></svg>txt</button>
-    <button id="aDel" class="danger"><svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>삭제</button>
-  </nav>
+  <form class="dask" id="dAskF"><input id="dAskQ" type="text" placeholder="이 링크에 대해 물어보기" autocomplete="off"><button aria-label="보내기"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button></form>
 </section>
 
 <!-- 캡처 보기 -->

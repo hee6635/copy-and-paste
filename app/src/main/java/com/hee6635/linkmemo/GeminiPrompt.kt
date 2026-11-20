@@ -9,6 +9,7 @@ internal fun Gemini.prompt(item: JSONObject, folders: List<String>, withVideo: B
     sb.append("""너는 사용자가 저장한 SNS 게시물 · 영상 · 웹페이지를 메모로 정리하는 도우미야. 한국어로, 짧고 쉽게.
 규칙:
 - summary: "꼭 알아둘 팁" 2~3줄. 각 줄 40자 안팎. places 의 info 에 이미 쓴 말 · 장소 나열은 되풀이하지 말고, 전체에 걸친 실용 팁(주의 · 추천 · 고르는 법 · 받는 법)만. 숫자 · 시간대는 [[ ]] 로 (예: [[오전]]에 가기). 영상(말 · 화면 글자) · 설명 · 댓글 · 작성자 답글에서. 광고 · 해시태그 · 인사는 빼기. 장소도 레시피도 아닌 영상이면 핵심 내용 2~4줄.
+- sumFrom: summary 각 줄이 어디서 나왔는지 같은 순서로 한 단어씩: 영상 · 본문 · 사진 · 댓글 · 작성자 댓글 중 하나.
 - tags: 2~5개, # 없이 짧은 명사 (지명 · 음식 · 주제). category 와 같은 말 · 서로 뜻이 겹치는 말(개발 · 개발·IT)은 빼기.
 - folder: 아래 "내 폴더" 중 가장 맞는 것의 경로를 그대로 쓰기. 주제가 다르면 억지로 고르지 말고 "큰폴더 › 작은폴더" 또는 "큰폴더" 형식으로 새로 제안 (category 이름을 큰폴더로 써도 됨). 작은 폴더는 지명이나 구체 주제일 때만.
 - places: 가게 · 장소 · 숙소가 나오면 나온 순서대로. name 은 짧은 이름, t 는 처음 보이는 시각(초, 영상이 아니면 -1), info 는 그곳의 핵심 정보 한 줄(메뉴 · 가격 · 시간대 · 주의 · 추천). info 의 숫자 · 시간은 [[ ]] 로. 장소가 없으면 빈 목록.
@@ -86,12 +87,13 @@ internal fun Gemini.schema(): JSONObject {
         "course" to arr(str()),
         "places" to arr(obj("name" to str(), "t" to JSONObject().put("type", "NUMBER"), "info" to str(),
             "need" to JSONObject().put("type", "STRING").put("enum", JSONArray(listOf("must", "maybe", "skip"))), req = listOf("name", "t", "info"))),
+        "sumFrom" to arr(str()),
         "listName" to str(),
         "area" to str(),
         req = listOf("summary", "tags", "folder", "kind", "category", "tips", "star", "transcript")
     ).put("propertyOrdering", JSONArray(listOf(
         // 화면에 먼저 보일 것부터: 받아쓰기 → 정보 → 요약 → 코스 → 꿀팁 → 나머지
         // 받아쓰기는 맨 뒤: 답이 끊겨도(저작권 차단 · 길이) 장소 · 요약은 남게
-        "listName", "area", "places", "facts", "summary", "course", "tips", "keyshots", "recipe", "checklist", "events",
+        "listName", "area", "places", "facts", "summary", "sumFrom", "course", "tips", "keyshots", "recipe", "checklist", "events",
         "tags", "folder", "kind", "category", "star", "desc_ko", "transcript")))
 }
