@@ -59,8 +59,8 @@ function renderTips(it) {
   const el = $('#dTips'); if (!el) return;
   const tips = (it.ai && it.ai.tips) || [];
   if (!tips.length) { el.innerHTML = ''; return; }
-  const src = t => t.from === 'video' && +t.t >= 0 ? `<button data-seek="${+t.t}">영상 ${fmtT(t.t)}</button>` : t.from === 'video' ? '영상' : t.from === 'author' ? '작성자 답글' : t.who ? '@' + esc(String(t.who).replace(/^@/, '')) : '댓글';
-  el.innerHTML = accHead('tips', '영상 · 댓글 꿀팁', tips.length) + `<div class="accb"><div class="sec">
+  const src = t => t.from === 'video' && +t.t >= 0 ? `<button data-seek="${+t.t}">영상 ${fmtT(t.t)}</button>` : t.from === 'video' ? '영상' : t.from === 'author' ? '작성자 답글' : t.from === 'body' || /^author$/i.test(t.who || '') ? '본문' : t.who ? '@' + esc(String(t.who).replace(/^@/, '')) : '댓글';
+  el.innerHTML = accHead('tips', it.ai.video ? '영상 · 댓글 꿀팁' : '꿀팁', tips.length) + `<div class="accb"><div class="sec">
     ${tips.map((t, i) => `<div class="tip"><span class="n">${i + 1}</span><div><p>${esc(t.text)}</p><small>${src(t)}</small></div></div>`).join('')}</div></div>`;
 }
 
@@ -126,7 +126,7 @@ function itemText(it) {
   L.push('🔗 ' + it.url);
   if ((it.tags || []).length) L.push(it.tags.map(t => '#' + t).join(' '));
   if (it.memo) L.push('', '── 내 메모 ──', it.memo);
-  if (it.ai && (it.ai.places || []).length) L.push('', '── 장소 ──', ...it.ai.places.map((p, i) => (i + 1) + '. ' + p.name + (+p.t >= 0 ? ' (' + fmtT(p.t) + ')' : '') + ' — ' + plain(p.info)));
+  if (it.ai && (it.ai.places || []).length) L.push('', '── ' + (it.ai.listName || '장소') + ' ──', ...it.ai.places.map((p, i) => (i + 1) + '. ' + p.name + (+p.t >= 0 ? ' (' + fmtT(p.t) + ')' : '') + ' — ' + plain(p.info) + (p.need === 'must' ? ' [필수]' : p.need === 'skip' ? ' [필요 없음]' : '')));
   else if (it.ai && (it.ai.course || []).length) L.push('', '── 코스 ──', it.ai.course.join(' → '));
   if (it.ai && (it.ai.summary || []).length) L.push('', '── 요약 ──', ...it.ai.summary.map(x => '· ' + plain(x)));
   if (it.ai && (it.ai.facts || []).length) L.push('', '── 핵심 정보 ──', ...it.ai.facts.map(x => (+x.t >= 0 ? '[' + fmtT(x.t) + '] ' : '· ') + x.text));

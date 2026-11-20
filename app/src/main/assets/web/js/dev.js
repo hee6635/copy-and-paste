@@ -4,6 +4,9 @@
 function devBridge() {
   const now = Date.now();
   let data = [
+    { id: 'L', url: 'https://m.blog.naver.com/x/1', platform: 'web', kind: '웹', status: 'done', category: '개발·IT', title: '클로드 스킬 처음 깔아 둘 10개', author: '네이버 블로그', createdAt: now,
+      ai: { listName: '스킬', places: [{ name: 'find-skills', t: -1, info: '필요한 스킬을 검색해 찾아 줌', need: 'must' }, { name: 'frontend-design', t: -1, info: '화면 디자인을 덜 뻔하게', need: 'maybe' }, { name: 'n8n-skills', t: -1, info: 'n8n 자동화 만들 때만', need: 'skip' }],
+        summary: ['처음엔 [[find-skills]] 하나만 깔고 필요할 때 늘리기'], tips: [{ text: '이름이 흔한 스킬은 저장소 이름으로 검색', from: 'body', who: 'author' }], model: 'gemini-flash-lite-latest' } },
     { id: 'a', url: 'https://www.instagram.com/reel/x', platform: 'instagram', kind: '릴스', status: 'done', category: '여행',
       ai: { places: [{ name: '콩카페', t: 3, info: '코코넛 커피 [[1일 1잔]] 추천' }, { name: '청안딤섬', t: 19, info: '딤섬 한 판 [[약 3천 원]] · [[북경오리]]' }], summary: ['잠만 잘 거면 벤타나, 야경은 아트네스트', '전체 일정은 댓글에 [[6박]] 남기면 받음'], course: ['콩카페', '포나가르 사원', '청안딤섬', '제시프루츠'], folder: '여행 › 나트랑', kind: 'recipe', recipe: { ingredients: ['감자 2개', '올리브유 1큰술'], steps: ['찬물에 10분', '200도 10분'] },
         tips: [{ text: '6시 전에 가야 웨이팅 없음', from: 'author', who: 'yytable' }], video: true, facts: [{ t: 5, text: 'Lai Seafood 랍스터 1kg 120만동' }, { t: -1, text: '화요일 휴무: Ớt Hiểm' }], model: 'gemini-2.5-flash',

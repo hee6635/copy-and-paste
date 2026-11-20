@@ -15,6 +15,7 @@ function renderAi(it) {
   let h = '';
   const sum = ai.summary || [];
   const places = (ai.places || []).filter(p => p && p.name);
+  const pName = esc(ai.listName || '장소');
   const sugg = ai.folder && ai.folder.trim() && fPath(it.folder) !== ai.folder.trim() ? ai.folder.trim() : '';
   const ck = it.checks || {};
   const rec = ai.kind === 'recipe' && ai.recipe && ((ai.recipe.ingredients || []).length || (ai.recipe.steps || []).length) ? ai.recipe : null;
@@ -29,14 +30,14 @@ function renderAi(it) {
     h += longNote + `<div class="sec"><div class="sh"><b>꼭 알아둘 팁</b>${redo}</div>${runinfo}
       ${sum.map(x => `<div class="tip3"><b>·</b><span>${rich(x)}</span></div>`).join('')}${suggHtml}</div>`;
     h += `<div class="sec"><div class="sh"><b>목차 ${chs.length}</b>${(it.ytChapters || []).length ? '<span class="badge2">유튜버 목차</span>' : ''}</div>${chs.map((c, i) => chapterRow(it, chs, i)).join('')}</div>`;
-    if (places.length) h += `<div class="sec"><div class="sh"><b>장소 ${places.length}</b></div>${places.map((p, i) => placeRow(it, p, i)).join('')}</div>`;
+    if (places.length) h += `<div class="sec"><div class="sh"><b>${pName} ${places.length}</b></div>${places.map((p, i) => placeRow(it, p, i)).join('')}</div>`;
     if (it.aiError) h += `<div class="sec"><div class="cmtx"><div class="why">다시 정리 실패: ${esc(String(it.aiError).split('\n')[0])}</div></div></div>`;
     el.innerHTML = h;
     return;
   }
   h += longNote;
   if (places.length) {
-    h += `<div class="sec"><div class="sh"><b>장소 ${places.length}</b>${redo}</div>${runinfo}${places.map((p, i) => placeRow(it, p, i)).join('')}</div>`;
+    h += `<div class="sec"><div class="sh"><b>${pName} ${places.length}</b>${redo}</div>${runinfo}${places.map((p, i) => placeRow(it, p, i)).join('')}</div>`;
   } else if (rec) {
     h += `<div class="sec"><div class="sh"><b>재료 ${(rec.ingredients || []).length}</b>${redo}</div>${runinfo}
       <div class="ing">${(rec.ingredients || []).map((x, i) => `<button class="chk${(ck.i || []).includes(i) ? ' on' : ''}" data-chk="i:${i}"><i></i><span>${esc(x)}</span></button>`).join('')}</div></div>`;
@@ -71,7 +72,8 @@ const rich = s => esc(s).replace(/\[\[(.+?)\]\]/g, (m, x) => CHIPY.test(x) ? `<s
 function placeRow(it, p, i) {
   const c = (it.captures || []).find(c => c.at && c.at.sec === 'places' && +c.at.i === i);
   const th = c ? `<button class="th2" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><i>${i + 1}</i></button>` : `<div class="th2 n"><i>${i + 1}</i></div>`;
-  return `<div class="pr">${th}<div class="pb"><b><span>${esc(p.name)}</span>${+p.t >= 0 ? `<button class="tm" data-seek="${+p.t}">${fmtT(p.t)}</button>` : ''}</b><p>${rich(p.info || '')}</p></div></div>`;
+  const need = p.need === 'must' ? '<em class="need">필수</em>' : p.need === 'skip' ? '<em class="need">필요 없음</em>' : '';
+  return `<div class="pr${p.need === 'skip' ? ' skip' : ''}">${th}<div class="pb"><b><span>${esc(p.name)}${need}</span>${+p.t >= 0 ? `<button class="tm" data-seek="${+p.t}">${fmtT(p.t)}</button>` : ''}</b><p>${rich(p.info || '')}</p></div></div>`;
 }
 function stepRow(it, x, i) {
   const c = (it.captures || []).find(c => c.at && c.at.sec === 'steps' && +c.at.i === i);
@@ -91,7 +93,7 @@ function sumCard(it, x, i) {
 let live = null;
 function sliceKey(txt, key) {
   const i = txt.indexOf('"' + key + '"'); if (i < 0) return null;
-  const keys = ['transcript', 'places', 'facts', 'summary', 'course', 'tips', 'keyshots', 'recipe', 'checklist', 'tags', 'folder', 'kind', 'category', 'star'];
+  const keys = ['transcript', 'listName', 'places', 'facts', 'summary', 'course', 'tips', 'keyshots', 'recipe', 'checklist', 'tags', 'folder', 'kind', 'category', 'star'];
   let end = txt.length;
   keys.forEach(k => { if (k === key) return; const j = txt.indexOf('"' + k + '"', i + 1); if (j > i && j < end) end = j; });
   return txt.slice(i, end);
@@ -103,6 +105,7 @@ function parsePartial(txt) {
   const strs = sl => { if (!sl) return []; const b = sl.indexOf('['); if (b < 0) return []; return [...sl.slice(b).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map(m => unq(m[1])); };
   const anyObjs = sl => { if (!sl) return []; const r = []; for (const m of sl.matchAll(/\{[^{}]*\}/g)) { try { r.push(JSON.parse(m[0])); } catch (e) {} } return r; };
   out.places = anyObjs(sliceKey(txt, 'places')).filter(p => p && p.name);
+  const ln = (sliceKey(txt, 'listName') || '').match(/:\s*"((?:[^"\\]|\\.)+)"/); out.listName = ln ? unq(ln[1]) : '';
   out.ts = anyObjs(sliceKey(txt, 'transcript')).filter(x => x && x.text != null);
   out.facts = objs(sliceKey(txt, 'facts'));
   out.sum = strs(sliceKey(txt, 'summary'));
@@ -167,10 +170,10 @@ function liveUpdate(txt) {
   }
   const pdone = p.places.length - (/\}\s*\]/.test(sliceKey(txt, 'places') || '') ? 0 : 1);
   for (live.pl = live.pl || 0; live.pl < Math.max(0, pdone); live.pl++) {
-    const pl = p.places[live.pl], i = live.pl;
+    const pl = p.places[live.pl], i = live.pl, pn = p.listName || '장소';
     typeQ = typeQ.then(() => new Promise(r => {
       const box = $('#lvPlaces'); if (!box) return r();
-      box.classList.remove('hide'); box.querySelector('.sh b').textContent = '장소 ' + (i + 1);
+      box.classList.remove('hide'); box.querySelector('.sh b').textContent = pn + ' ' + (i + 1);
       const d = document.createElement('div'); d.innerHTML = placeRow({ id: '', captures: [] }, pl, i); const row = d.firstElementChild; row.classList.add('pop');
       box.appendChild(row); setTimeout(r, 260);
     }));
