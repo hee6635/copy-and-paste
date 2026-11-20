@@ -1,16 +1,5 @@
 'use strict';
 /* 캡처: 찍기 · 잘라쓰기 · 붙일 곳 · 여러 개 고르기 · 캡처 보기 */
-function capture() {
-  const v = $('#dVideo'); if (!v || !v.videoWidth) { toast('영상을 먼저 재생해 주세요'); return; }
-  const scale = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight));
-  const c = document.createElement('canvas');
-  c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
-  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-  const f = $('#dFlash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
-  v.pause();
-  openCrop(c.toDataURL('image/jpeg', .92), v.currentTime);
-}
-
 // ── 잘라쓰기 ──
 let cropT = 0, cropSrc = '', cb = null;
 function openCrop(data, t) {

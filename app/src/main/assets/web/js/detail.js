@@ -29,15 +29,8 @@ function renderDetail(full) {
   const it = byId(cur); if (!it) return;
   $('#dTopTitle').textContent = it.title || '';
   const sc = $('#dScroll');
-  // 영상을 새로 받았으면(처음 · 다시 받기) 영상 칸을 다시 만듦
-  const dv = $('#dVideo');
-  if (it.video && (!dv || dv.dataset.at !== String(it.videoAt || ''))) full = true;
   if (full || !sc.querySelector('.meta')) {
-    let media = '';
-    if (it.video) {
-      media = `<div class="video hide" id="dVid"><video id="dVideo" data-at="${it.videoAt || ''}" src="${fileUrl(it.id, it.video)}${it.videoAt ? '?v=' + it.videoAt : ''}" ${it.thumb ? `poster="${fileUrl(it.id, it.thumb)}"` : ''} controls playsinline preload="metadata"></video>
-        <button class="capbtn" id="dCap"><svg class="ic" viewBox="0 0 24 24"><path d="M4 8a1 1 0 0 1 1-1h2.5l1.5-2h6l1.5 2H19a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>캡처</button><div class="flash" id="dFlash"></div></div>`;
-    }
+    const media = '';  // 영상은 기본 플레이어로 봄 (앱 화면은 일부 소리 형식을 못 풀어서)
     accOpen = {};
     sc.innerHTML = `<div class="meta"></div>` + (media || '<div id="dMedia"></div>') + `<div id="dPanes"></div>
       <div data-pane="guide"><div id="dAi"></div><div id="dTips"></div>
@@ -59,7 +52,6 @@ function renderDetail(full) {
     ${(it.tags || []).map(t => `<button class="tg" data-tag="${esc(t)}">#${esc(t)}</button>`).join('')}
     <button class="add" id="dAddTag" aria-label="태그 추가"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>${verr}`;
   if (!it.video) renderMedia(it);
-  if (full) watchVideo(it);
   renderAi(it);
   renderTips(it);
   renderCaps(it);
@@ -77,7 +69,6 @@ function renderPanes(it) {
   $('#dPanes').innerHTML = `<div class="mtabs">${ps.map(p => `<button data-pane-go="${p[0]}" class="${p[0] === curPane ? 'on' : ''}">${p[1]}</button>`).join('')}</div>`;
   document.querySelectorAll('#dScroll [data-pane]').forEach(el => el.classList.toggle('hide', el.dataset.pane !== curPane));
 }
-function showVideo(play) { const w = $('#dVid'); if (!w) return null; w.classList.remove('hide'); const v = $('#dVideo'); if (play) v.play().catch(() => {}); return v; }
 
 /** 비슷한 메모: 같은 장소 · 태그 · 폴더 · 갈래 (AI 없이 점수로) */
 function renderSim(it) {
@@ -119,7 +110,7 @@ function renderCaps(it) {
   if (!it.video && caps.length === 0) { el.innerHTML = ''; return; }
   el.innerHTML = `<div class="sec"><div class="shots">
     ${caps.map(c => `<button class="shot" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}</button>`).join('')}
-    ${it.video ? '<button class="shot plus" id="dCapAdd" aria-label="지금 장면 캡처"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>' : ''}
+    ${it.video ? '<button class="shot plus" id="dCapAdd" aria-label="영상에서 캡처"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>' : ''}
   </div></div>`;
 }
 
@@ -230,29 +221,5 @@ function cmtJunk(c) {
 /** 영상을 받을 수 있는 메모: 유튜브 · 인스타 영상 (사진 게시물 제외) */
 const canGetVideo = it => (it.platform === 'youtube' || it.platform === 'instagram') && !(it.photos || []).length && !/사진|게시물/.test(it.kind || '');
 
-/** 앱 안 재생이 실패하면 이유를 보여 주기 (조용히 처음으로 돌아가지 않게) */
-const VERR = { 1: '재생이 중단됐어요', 2: '파일을 받다가 끊겼어요', 3: '영상 형식을 풀지 못했어요', 4: '앱 화면이 이 영상 파일을 열지 못했어요' };
-function watchVideo(it) {
-  const v = $('#dVideo'); if (!v) return;
-  let played = false;
-  const show = why => {
-    if ($('#dVfail')) return;
-    // 앱 화면이 못 푸는 영상 → 기본 플레이어로 (이 메모는 다음부터 바로)
-    if (!it.playNative) { it.playNative = true; A.update(it.id, JSON.stringify({ playNative: true })); }
-    if (played) playNative(it, v.currentTime || 0);
-    const d = document.createElement('div');
-    d.id = 'dVfail'; d.className = 'sec warn';
-    const af = it.audioFmt && it.audioFmt !== 'AAC-LC' ? `<div class="why">소리 형식: ${esc(it.audioFmt)}${it.audioFmt === 'xHE-AAC' ? ' (인스타 새 형식 · 앱 화면이 못 풀어요, 갤러리에선 돼요)' : ''}</div>` : '';
-    d.innerHTML = `<div class="cmtx"><b>앱 화면에서 재생이 안 돼서 기본 플레이어로 열어요</b><div class="why">${esc(why)}</div>${af}<div class="bt"><button class="chip dark" data-vnative>기본 플레이어로 보기</button><button class="chip" data-dlvideo>다시 받기</button></div></div>`;
-    $('#dVid').before(d);
-  };
-  v.addEventListener('error', () => { const e = v.error; show((VERR[e && e.code] || '알 수 없는 오류') + (e && e.message ? ' · ' + e.message : '') + (e ? ' (코드 ' + e.code + ')' : '')); });
-  // 오류 없이 1초 만에 처음으로 돌아가는 경우: 재생을 눌렀는데 4초 뒤에도 거의 안 나갔으면
-  v.addEventListener('play', () => { played = true; }, { once: true });
-  v.addEventListener('play', () => setTimeout(() => {
-    if (v.isConnected && v.currentTime < 1.5 && (v.paused || v.readyState < 3)) show(`재생이 시작되자마자 멈췄어요 (읽은 정도 ${v.readyState}/4 · 받기 상태 ${v.networkState} · ${Math.round(v.currentTime * 10) / 10}초)`);
-  }, 4000));
-}
-
 /** 안드로이드 기본 플레이어로 재생 (갤러리와 같은 방식) */
-function playNative(it, t) { const v = $('#dVideo'); if (v) v.pause(); A.playNative(it.id, it.video, Math.max(0, +t || 0)); }
+function playNative(it, t) { A.playNative(it.id, it.video, Math.max(0, +t || 0)); }

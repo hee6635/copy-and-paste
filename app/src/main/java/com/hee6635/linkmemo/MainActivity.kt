@@ -362,9 +362,9 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun setLimit(model: String, n: Int) = Usage.setLimit(ctx, model, n)
         /** 긴 영상도 영상 받기 */
         @JavascriptInterface fun downloadVideo(id: String) = SaveService.start(ctx, id, "video")
-        /** 앱 화면이 못 푸는 영상: 안드로이드 기본 플레이어로 (t 초부터) */
+        /** 영상 보기: 안드로이드 기본 플레이어로 (t 초부터) · 플레이어에서 캡처 가능 */
         @JavascriptInterface fun playNative(id: String, name: String, t: Double) {
-            startActivity(Intent(ctx, PlayerActivity::class.java).putExtra("path", File(Store.dir(ctx, id), name).absolutePath).putExtra("t", t))
+            startActivity(Intent(ctx, PlayerActivity::class.java).putExtra("path", File(Store.dir(ctx, id), name).absolutePath).putExtra("t", t).putExtra("id", id))
         }
         @JavascriptInterface fun igPhotos(id: String) = SaveService.start(ctx, id, "igPhotos")
         @JavascriptInterface fun backup(withVideo: Boolean) {
