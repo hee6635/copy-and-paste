@@ -372,7 +372,7 @@ object Gemini {
             log.add("끊긴 답 살림", 0, "${raw.length}자 · " + JsonFix.reason(finish), false)
             fixed.put("cut", JsonFix.reason(finish))
         }
-        return normalize(parsed)
+        return normalize(parsed, item.optDouble("duration", 0.0))
             .put("at", System.currentTimeMillis()).put("video", withVideo).put("model", used)
             .put("modelVersion", res.optString("modelVersion")).put("log", log.json(usage).put("modelVersion", res.optString("modelVersion")))
     }

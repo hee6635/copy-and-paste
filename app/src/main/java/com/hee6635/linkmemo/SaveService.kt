@@ -351,6 +351,8 @@ class SaveService : Service() {
         req.addOption("--no-playlist"); req.addOption("--no-mtime")
         req.addOption("-f", formatFor(Prefs.quality(this)))
         req.addOption("--merge-output-format", "mp4")
+        // 합칠 때 목차(moov)를 파일 앞에: 앱 화면은 앞부터 받아 가며 재생해서, 목차가 끝에 있으면 1초만 나오고 멈춤
+        req.addOption("--postprocessor-args", "Merger+ffmpeg_o1:-movflags +faststart")
         req.addOption("--socket-timeout", "30")
         req.addOption("-o", File(dir, "media.%(ext)s").absolutePath)
         if (platformOf(url) == "instagram") Ig.cookieFile(this)?.let { req.addOption("--cookies", it.absolutePath) }
@@ -372,7 +374,7 @@ class SaveService : Service() {
         val item = Store.get(this, id) ?: return
         try {
             val name = downloadVideoFile(id, item.optString("url")) ?: throw IllegalStateException("영상 파일이 안 생겼어요")
-            emit(Store.patch(this, id) { it.put("status", "done"); it.remove("stage"); it.remove("longSkipped"); it.put("video", name); it.put("videoSize", File(Store.dir(this, id), name).length()) })
+            emit(Store.patch(this, id) { it.put("status", "done"); it.remove("stage"); it.remove("longSkipped"); it.remove("videoError"); it.put("video", name); it.put("videoAt", System.currentTimeMillis()); it.put("videoSize", File(Store.dir(this, id), name).length()) })
         } catch (e: Throwable) {
             emit(Store.patch(this, id) { it.put("status", "done"); it.remove("stage"); it.put("videoError", friendly(e.message ?: e.toString())) })
         }

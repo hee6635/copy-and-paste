@@ -41,14 +41,26 @@ internal fun android.content.Context.folderPaths(): List<String> = try {
     }
 } catch (_: Throwable) { emptyList() }
 
-/** AI 결과를 메모에 넣기: 갈래 · 태그 더하기 · 정보 댓글 ★ · 실패 흔적 지우기 */
+/**
+ * AI 태그 바꾸기: 지난번 AI 태그(aiTags)는 빼고 새 AI 태그(최대 4개)로. 내가 넣은 태그는 그대로.
+ * aiTags 기록이 없는 예전 메모는 있던 태그를 모두 AI 것으로 봄 (예전엔 직접 넣은 것과 구분이 안 됐음)
+ */
+internal fun applyTags(o: JSONObject, ai: JSONObject) {
+    val old = o.optJSONArray("tags") ?: JSONArray()
+    val oldAi = o.optJSONArray("aiTags")
+    val prevAi = if (oldAi == null) null else (0 until oldAi.length()).map { oldAi.optString(it) }.toSet()
+    val mine = (0 until old.length()).map { old.optString(it) }.filter { prevAi != null && it !in prevAi }
+    val cat = ai.optString("category")
+    val fresh = mutableListOf<String>()
+    ai.optJSONArray("tags")?.let { t -> for (i in 0 until t.length()) { val v = t.optString(i).removePrefix("#").trim(); if (v.isNotEmpty() && v != cat && v !in fresh && v !in mine && fresh.size < 4) fresh.add(v) } }
+    o.put("tags", JSONArray(mine + fresh)).put("aiTags", JSONArray(fresh))
+}
+
+/** AI 결과를 메모에 넣기: 갈래 · 태그 바꾸기 · 정보 댓글 ★ · 실패 흔적 지우기 */
 internal fun mergeAi(o: JSONObject, ai: JSONObject) {
     o.put("ai", ai)
     ai.optString("category").takeIf { it.isNotEmpty() }?.let { o.put("category", it) }
-    val tags = o.optJSONArray("tags") ?: JSONArray()
-    val have = (0 until tags.length()).map { tags.getString(it) }.toMutableSet()
-    ai.optJSONArray("tags")?.let { t -> for (i in 0 until t.length()) { val v = t.optString(i).removePrefix("#").trim(); if (v.isNotEmpty() && have.add(v) && tags.length() < 8) tags.put(v) } }
-    o.put("tags", tags)
+    applyTags(o, ai)
     val cs = o.optJSONArray("comments"); val star = ai.optJSONArray("star")
     if (cs != null) {
         for (i in 0 until cs.length()) cs.optJSONObject(i)?.remove("star")
@@ -86,10 +98,7 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
             emit(Store.patch(this, id) { o ->
                 o.put("ai", ai)
                 ai.optString("category").takeIf { it.isNotEmpty() }?.let { o.put("category", it) }
-                val tags = o.optJSONArray("tags") ?: JSONArray()
-                val have = (0 until tags.length()).map { tags.getString(it) }.toMutableSet()
-                ai.optJSONArray("tags")?.let { t -> for (i in 0 until t.length()) { val v = t.getString(i).removePrefix("#").trim(); if (v.isNotEmpty() && have.add(v) && tags.length() < 8) tags.put(v) } }
-                o.put("tags", tags)
+                applyTags(o, ai)
                 o.remove("aiBusy"); o.remove("aiBusyAt"); o.remove("aiError"); o.remove("aiLog"); o.remove("aiRetryAt"); o.remove("aiRetryN")
             })
         } catch (e: Throwable) {
@@ -177,11 +186,7 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
         emit(Store.patch(this, id) { o ->
             o.put("ai", ai)
             ai.optString("category").takeIf { it.isNotEmpty() }?.let { o.put("category", it) }
-            // 자동 태그: 있는 태그에 더하기
-            val tags = o.optJSONArray("tags") ?: JSONArray()
-            val have = (0 until tags.length()).map { tags.getString(it) }.toMutableSet()
-            ai.optJSONArray("tags")?.let { t -> for (i in 0 until t.length()) { val v = t.getString(i).removePrefix("#").trim(); if (v.isNotEmpty() && have.add(v) && tags.length() < 8) tags.put(v) } }
-            o.put("tags", tags)
+            applyTags(o, ai)
             // 정보 있는 댓글 ★
             val cs = o.optJSONArray("comments")
             val star = ai.optJSONArray("star")

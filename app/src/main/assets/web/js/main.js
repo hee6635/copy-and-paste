@@ -98,6 +98,8 @@ document.addEventListener('click', e => {
   });
   if (t.closest('#ordDone')) { saveOrder(); closePage('order'); if (selecting) endSelect(); toast('순서를 바꿨어요'); return; }
   if (t.closest('[data-dlvideo]')) { A.downloadVideo(cur); toast('영상을 받는 중이에요'); return; }
+  if (t.closest('[data-dlask]')) { const id = cur; confirmAsk('영상을 받을까요?', '받기', () => { A.downloadVideo(id); toast('영상을 받는 중이에요'); }); return; }
+  if (t.closest('[data-vsave]')) { $('#aSave').click(); return; }
   const cs2 = t.closest('[data-chsub]'); if (cs2) { cs2.nextElementSibling.classList.toggle('hide'); cs2.textContent = cs2.nextElementSibling.classList.contains('hide') ? '이 부분 자막 ⌄' : '접기 ⌃'; return; }
   const lm = t.closest('[data-lim]'); if (lm) { const m = lm.dataset.lim; return ask(mLabel(m) + ' 하루 한도', '한도 (번)', v => { const n = parseInt(v, 10); if (n > 0) { A.setLimit(m, n); renderUsage(); } }, lm.dataset.v); }
   const dm = t.closest('[data-dm]'); if (dm) return setDockMode(dm.dataset.dm);
@@ -130,7 +132,7 @@ document.addEventListener('click', e => {
   }
   const sk = t.closest('[data-seek]'); if (sk) {
     const v = showVideo(false); const sec = Math.floor(+sk.dataset.seek); const it = byId(cur);
-    if (v) { v.currentTime = sec; v.play(); $('#dScroll').scrollTo({ top: 0, behavior: 'smooth' }); }
+    if (v) { v.currentTime = sec; v.play().catch(() => {}); $('#dScroll').scrollTo({ top: 0, behavior: 'smooth' }); }
     else if (it && it.platform === 'youtube') { const m = it.url.match(/(?:youtu\.be\/|\/shorts\/|[?&]v=)([A-Za-z0-9_-]{11})/); A.open(m ? 'https://www.youtube.com/watch?v=' + m[1] + '&t=' + sec + 's' : it.url); }
     else toast('영상을 저장하지 않아서 ' + fmtT(sec) + ' 장면은 원본에서 봐 주세요');
     return;
@@ -252,7 +254,7 @@ $('#cGallery').onclick = () => { const it = byId(cur); const c = it && it.captur
 $('#cPlay').onclick = () => {
   const it = byId(cur); const c = it && it.captures.find(x => x.id === curCap); if (!c) return;
   closePage('capView');
-  const v = $('#dVideo'); if (v) { v.currentTime = c.t; v.play(); $('#dScroll').scrollTo({ top: 0, behavior: 'smooth' }); }
+  const v = $('#dVideo'); if (v) { v.currentTime = c.t; v.play().catch(() => {}); $('#dScroll').scrollTo({ top: 0, behavior: 'smooth' }); }
 };
 $('#cDel').onclick = () => confirmAsk('이 캡처를 지울까요?', '지우기', () => {
   const id = curCap; closePage('capView');

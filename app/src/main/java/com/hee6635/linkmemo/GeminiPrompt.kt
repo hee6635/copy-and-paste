@@ -12,11 +12,10 @@ internal fun Gemini.prompt(item: JSONObject, folders: List<String>, withVideo: B
 1. 사실만 쓰기: 영상(말 · 화면 자막 · 간판 · 가격표) · 설명 · 본문 · 사진 · 댓글에 실제로 나온 내용만 쓰기. 없는 사실을 추측하거나 "구글 평점 기반", "분위기 좋은", "즐거운 여행", "추천하는 리스트입니다" 같은 근거 없는 수식어 · 감상 · 제목 풀어쓰기 절대 금지. (places 의 need 판단만은 상식을 써도 됨)
 2. 중복 금지: places.info 나 recipe.steps 에 이미 쓴 메뉴 · 가격 · 조리 과정을 tips 에 되풀이하지 말기.
 3. 숨은 알짜 정보 우선: 영상 말뿐 아니라 화면 자막 · 간판에 짧게 지나가는 할인 · 제휴 · 영업시간 · 예약 조건, 그리고 작성자 답글 속 비교 · 주의사항을 놓치지 말기.
-4. 강조 표시: 중요한 숫자 · 가격 · 시간 · 비율 · 할인명은 [[ ]] 로 감싸기 (예: [[오전 6시]], [[2,500~5,500원]], [[라면 1개당 1큰술]]).
+4. 영상 시각(t): 영상 앞 15초 안의 인트로 · 미리보기 · 하이라이트 컷은 쓰지 말고, 실제로 그 장면을 설명하는 본 구간의 시각을 쓰기. 영상 길이를 넘는 시각은 절대 쓰지 말기.
+5. 강조 표시: 중요한 숫자 · 가격 · 시간 · 비율 · 할인명은 [[ ]] 로 감싸기 (예: [[오전 6시]], [[2,500~5,500원]], [[라면 1개당 1큰술]]).
 
 [칸별 규칙 — JSON 순서대로 작성]
-- category: 아래 목록 중 딱 하나: ${CATEGORIES.joinToString(", ")}
-- folder: 위에서 고른 category 와 주제가 일치하는 폴더만 아래 "내 폴더"에서 그대로 고르기. 주제가 다르면 기존 폴더를 억지로 고르지 말고 "category › 구체주제" 또는 "category" 로 새로 제안 (구체주제는 지명이나 세부 주제일 때만).
 - kind: 요리법이면 recipe, 준비물 · 할 일 목록이면 checklist, 그 밖은 general.
 - area: 장소들이 있는 도시 · 지역 이름 하나 (지도 검색용, 예: 나트랑 · 성수동). 장소 글이 아니면 빈칸.
 - listName: places 에 담은 것이 장소가 아닐 때만 항목 종류 한 단어 (예: 스킬 · 앱 · 책 · 제품). 장소면 빈칸.
@@ -28,11 +27,12 @@ internal fun Gemini.prompt(item: JSONObject, folders: List<String>, withVideo: B
 - recipe: kind 가 recipe 일 때만.
   * servings: 몇 인분인지. 라면 · 만두 등 봉지/개수 기준 요리는 1봉지(1개)=1인분으로 계산 (예: 라면 3봉지면 servings=3). 나오지 않으면 짐작, 모르면 1.
   * ingredients: 재료와 전체 양(servings 기준). 양은 숫자로 (예: 사리곰탕 3개, 대파 2대, 물 1800ml). 영상에 "소주잔 1잔 미만", "종이컵 반 컵" 같은 구체적 생활 계량이 나오면 "적당량"으로 뭉개지 말고 그대로 쓰기. 계량이 아예 없을 때만 "적당량".
-  * steps: 순서대로. 인분 조절을 위해 문장 안에 전체 절대 용량(예: 1800ml, 3큰술, 2대)을 쓰지 말고, "준비한 대파를 썰고", "고춧가루를 넣고"처럼 동작 · 불 세기 · 타이밍 · 상태 중심으로 쓰기. 각 단계마다 t 에 해당 동작이 시작하는 영상 시각(초, 영상이 아니면 -1).
+  * steps: 순서대로. 인분 조절을 위해 문장 안에 수량 · 계량 단위(ml · L · g · kg · 큰술 · 작은술 · 컵 · 개 · 대 · 봉지 · 장 · 줌 등)를 숫자와 함께 절대 쓰지 말고 ("물 1800ml를 넣는다" ✕ → "물을 붓는다" ○, 조리 시간 · 불 세기는 그대로 쓰기: "중불에서 [[2분]]"), "준비한 대파를 썰고", "고춧가루를 넣고"처럼 동작 · 불 세기 · 타이밍 · 상태 중심으로 쓰기. 각 단계마다 t 에 해당 동작이 시작하는 영상 시각(초, 영상이 아니면 -1).
 - checklist: kind 가 checklist 일 때만. 항목별로 짧고 명확하게.
 - events: 날짜가 정해진 행사 · 할인 · 공연 · 마감 · 예약 오픈만 0~3개. title 은 짧게, date 는 YYYY-MM-DD (연도가 없으면 오늘 기준 가장 가까운 앞날), time 은 HH:MM (없으면 빈칸), end 는 끝나는 날 YYYY-MM-DD (없으면 빈칸), place 는 장소 (없으면 빈칸). 날짜가 없으면 빈 목록.
 - tips: 아래 기준에 따라 실제로 쓸모 있는 핵심 팁만.
   * places · recipe · checklist 중 하나라도 있으면: 0~5개. 이미 앞 칸에 쓴 내용은 절대 반복 금지. 억지로 채우지 말고 쓸 만한 팁이 없으면 빈 목록 허용.
+    단순 맛 평가 · 칭찬("감칠맛이 좋다", "전문점 수준", "맛있어요")은 팁이 아니니 빼기.
     우선순위: ① 할인 · 제휴 · 사전 준비(카페 등업, 댓글로 지도/링크 받기 등) ② 비교 · 대안 · 선택 기준(A vs B, 예약 실패 시 대안, 상황별 추천) ③ 조리 비율 공식(1인분/1개 기준) · 실패 방지 요령 · 방문 주의사항 ④ 작성자 답글 · 댓글 속 실질 Q&A · 재방문 후기.
   * places · recipe · checklist 가 모두 비어 있는 일반 정보 · 강의 · 리뷰 글이면: 핵심 요약 3~6개.
   * 각 항목 구성:
@@ -42,6 +42,8 @@ internal fun Gemini.prompt(item: JSONObject, folders: List<String>, withVideo: B
     - t: from 이 video 면 해당 시각(초), 아니면 -1.
     - who: from 이 author 나 comment 면 아이디, 아니면 빈칸.
 - star: 실질적 정보(질문 · 답변 · 후기 · 가격 · 비교 · 팁)가 있는 댓글의 번호 목록. [댓글] 줄 앞에 붙은 숫자를 그대로 쓰기 (쓸모없는 댓글은 미리 빼서 번호가 건너뛰어도 다시 세지 말기). 단순 감탄 · 이모지 · 지인 태그 댓글은 제외.
+- category: (앞 칸을 다 쓴 뒤 내용을 보고) 아래 목록 중 딱 하나. 요리법이면 반드시 요리: ${CATEGORIES.joinToString(", ")}
+- folder: 바로 위에서 고른 category 와 주제가 일치하는 폴더만 아래 "내 폴더"에서 그대로 고르기. 주제가 다르면 기존 폴더를 억지로 고르지 말고 "category › 구체주제" 또는 "category" 로 새로 제안 (구체주제는 지명이나 세부 주제일 때만).
 - tags: 2~4개, # 없이 짧은 명사 (지명 · 음식 · 주제). category 와 같은 말 · 뜻이 겹치는 말은 빼기.
 - keyshots: (영상 있을 때만) 메뉴판 · 가격표 · 할인 안내 · 지도 · 완성 요리처럼 정보가 화면에 또렷이 보이는 장면 3~5개. places 의 t 와 겹치는 장소 대표 장면은 제외. t 는 시각(초), why 는 무엇이 보이는지 짧게, sec(tips | steps) 와 idx(0부터)는 사진에 보이는 것이 그 줄에 직접 일치할 때만 (맞는 줄이 없으면 idx 는 -1). (영상 없으면 빈 목록)
 - desc_ko: [설명]이 한국어가 아니면 자연스러운 한국어 번역, 한국어면 빈칸.
@@ -107,15 +109,23 @@ internal fun Gemini.schema(): JSONObject {
         req = listOf("category", "folder", "kind", "places", "tips", "star", "tags")
     ).put("propertyOrdering", JSONArray(listOf(
         // 받아쓰기는 맨 뒤: 답이 끊겨도(저작권 차단 · 길이) 장소 · 팁은 남게
-        "category", "folder", "kind", "area", "listName", "places", "recipe", "checklist", "events",
-        "tips", "star", "tags", "keyshots", "desc_ko", "transcript")))
+        // 갈래 · 폴더는 내용을 다 쓴 뒤에 (앞에 두니 엉뚱한 갈래를 고름)
+        "kind", "area", "listName", "places", "recipe", "checklist", "events",
+        "tips", "star", "category", "folder", "tags", "keyshots", "desc_ko", "transcript")))
 }
 
 /**
  * 새 답 모양 → 화면이 쓰는 모양으로 (예전 메모와 같게):
  * tips(label · text · from · t · who) → summary(글) + sumFrom(출처 칩) + sumLabel(이름표) + sumMeta(출처 · 시각) · 레시피 순서 {text, t} → 글 + stepT · keyshots sec tips → summary
  */
-internal fun Gemini.normalize(ai: JSONObject): JSONObject {
+internal fun Gemini.normalize(ai: JSONObject, dur: Double = 0.0): JSONObject {
+    if (ai.optString("kind") == "recipe") ai.put("category", "요리")
+    // 영상 길이를 넘는 시각은 AI 가 잘못 짐작한 것 → -1
+    if (dur > 0) {
+        fun fix(o: JSONObject?) { if (o != null && o.optDouble("t", -1.0) > dur) o.put("t", -1.0) }
+        for (k in listOf("places", "tips", "keyshots")) ai.optJSONArray(k)?.let { a -> for (i in 0 until a.length()) fix(a.optJSONObject(i)) }
+        ai.optJSONObject("recipe")?.optJSONArray("steps")?.let { a -> for (i in 0 until a.length()) fix(a.optJSONObject(i)) }
+    }
     if (!ai.has("summary")) {
         val tips = ai.optJSONArray("tips") ?: JSONArray()
         val sum = JSONArray(); val from = JSONArray(); val lab = JSONArray(); val meta = JSONArray()

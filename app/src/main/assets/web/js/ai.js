@@ -113,7 +113,9 @@ const rich = s => esc(s).replace(/\[\[(.+?)\]\]/g, (m, x) => CHIPY.test(x) ? `<s
 function placeRow(it, p, i) {
   const c = (it.captures || []).find(c => c.at && c.at.sec === 'places' && +c.at.i === i);
   const th = c ? `<button class="th2" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><i>${i + 1}</i></button>` : `<div class="th2 n"><i>${i + 1}</i></div>`;
-  const need = p.need === 'must' ? '<em class="need">필수</em>' : p.need === 'skip' ? '<em class="need">필요 없음</em>' : '';
+  // 필수는 앞에서 2개까지만 (AI 가 제한을 넘길 때가 있어서)
+  const mustOk = p.need === 'must' && ((it.ai && it.ai.places) || []).slice(0, i).filter(q => q.need === 'must').length < 2;
+  const need = mustOk ? '<em class="need">필수</em>' : p.need === 'skip' ? '<em class="need">필요 없음</em>' : '';
   const pin = it.ai && !it.ai.listName ? `<button class="pin" data-map="${esc(mapQ(it, p))}" aria-label="지도에서 보기"><svg class="ic" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg></button>` : '';
   return `<div class="pr${p.need === 'skip' ? ' skip' : ''}${pin ? ' haspin' : ''}">${th}<div class="pb"><b><span>${esc(p.name)}${need}</span>${+p.t >= 0 ? `<button class="tm" data-seek="${+p.t}">${fmtT(p.t)}</button>` : ''}</b><p>${rich(p.info || '')}</p></div>${pin}</div>`;
 }

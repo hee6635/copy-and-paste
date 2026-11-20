@@ -32,7 +32,7 @@ function renderDetail(full) {
   if (full || !sc.querySelector('.meta')) {
     let media = '';
     if (it.video) {
-      media = `<div class="video hide" id="dVid"><video id="dVideo" src="${fileUrl(it.id, it.video)}" ${it.thumb ? `poster="${fileUrl(it.id, it.thumb)}"` : ''} controls playsinline preload="metadata"></video>
+      media = `<div class="video hide" id="dVid"><video id="dVideo" src="${fileUrl(it.id, it.video)}${it.videoAt ? '?v=' + it.videoAt : ''}" ${it.thumb ? `poster="${fileUrl(it.id, it.thumb)}"` : ''} controls playsinline preload="metadata"></video>
         <button class="capbtn" id="dCap"><svg class="ic" viewBox="0 0 24 24"><path d="M4 8a1 1 0 0 1 1-1h2.5l1.5-2h6l1.5 2H19a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>캡처</button><div class="flash" id="dFlash"></div></div>`;
     }
     accOpen = {};
@@ -46,13 +46,15 @@ function renderDetail(full) {
   }
   const th = it.thumb ? `<button class="hthumb" ${it.video ? 'data-vshow' : ''} aria-label="${it.video ? '영상 보기' : '대표 그림'}"><img src="${fileUrl(it.id, it.thumb)}" alt="">${it.video ? PLAY : ''}</button>`
     : it.video ? `<button class="hthumb n" data-vshow aria-label="영상 보기">${PLAY}</button>` : '';
+  const th2 = !it.video && canGetVideo(it) && it.thumb ? th.replace('<button class="hthumb"', '<button class="hthumb" data-dlask') : th;
   sc.querySelector('.meta').innerHTML = `<div class="s">${esc(PLAT[it.platform] || '')}${it.author ? ' · ' + esc(it.author) : ''} · ${fmtD(it.createdAt)}</div>
-    <div class="hrow"><h2>${esc(it.title || it.url)}</h2>${th}</div>
+    <div class="hrow"><h2>${esc(it.title || it.url)}</h2>${th2}</div>
     <div class="chiprow"><button class="fchip" id="dFolder"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>${esc(fPath(it.folder) || '폴더 없음')}<svg class="ic chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
     <button class="fchip" id="dCat">${esc(it.category ? catLabel(it.category) : '키워드 없음')}<svg class="ic chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
     ${(it.tags || []).map(t => `<button class="tg" data-tag="${esc(t)}">#${esc(t)}</button>`).join('')}
     <button class="add" id="dAddTag" aria-label="태그 추가"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>`;
   if (!it.video) renderMedia(it);
+  if (full) watchVideo(it);
   renderAi(it);
   renderTips(it);
   renderCaps(it);
@@ -70,7 +72,7 @@ function renderPanes(it) {
   $('#dPanes').innerHTML = `<div class="mtabs">${ps.map(p => `<button data-pane-go="${p[0]}" class="${p[0] === curPane ? 'on' : ''}">${p[1]}</button>`).join('')}</div>`;
   document.querySelectorAll('#dScroll [data-pane]').forEach(el => el.classList.toggle('hide', el.dataset.pane !== curPane));
 }
-function showVideo(play) { const w = $('#dVid'); if (!w) return null; w.classList.remove('hide'); const v = $('#dVideo'); if (play) v.play(); return v; }
+function showVideo(play) { const w = $('#dVid'); if (!w) return null; w.classList.remove('hide'); const v = $('#dVideo'); if (play) v.play().catch(() => {}); return v; }
 
 /** 비슷한 메모: 같은 장소 · 태그 · 폴더 · 갈래 (AI 없이 점수로) */
 function renderSim(it) {
@@ -146,7 +148,8 @@ function renderTabs(it) {
       ${(c.r || []).map(r => `<div class="rep"><div class="h"><b>@${esc(r.a)}${r.own ? '<span class="own">작성자</span>' : ''}</b><span>♡ ${r.l || 0}</span></div><p>${esc(r.t)}</p></div>`).join('')}</div>`).join('') + (ordered.length > nTop ? '</div>' : '') + (ref ? '<button class="refetch" data-refetch>댓글 다시 가져오기</button>' : '');
   }
   $('#dBody').innerHTML = `<div class="sec">${body}</div>`;
-  $('#dRun').innerHTML = runInfoHtml(it) ? `<div class="sec">${runInfoHtml(it)}</div>` : '';
+  const vb = it.video ? '<button class="chip" data-dlvideo>영상 다시 받기</button>' : canGetVideo(it) ? '<button class="chip dark" data-dlvideo>영상 받기</button>' : '';
+  $('#dRun').innerHTML = runInfoHtml(it) || vb ? `<div class="sec">${vb ? `<div class="bt" style="margin-bottom:${runInfoHtml(it) ? 10 : 0}px">${vb}${it.videoError ? `<span class="why">${esc(it.videoError)}</span>` : ''}</div>` : ''}${runInfoHtml(it)}</div>` : '';
 }
 
 function longText(s) {
@@ -217,4 +220,25 @@ document.addEventListener('click', e => {
 function cmtJunk(c) {
   if ((c.r || []).some(r => r.own)) return false;
   return String(c.t || '').replace(/@\S+/g, '').replace(/[\p{Extended_Pictographic}\s!?.,~ㅋㅎㅠㅜ♡❤️]/gu, '').length < 6;
+}
+
+/** 영상을 받을 수 있는 메모: 유튜브 · 인스타 영상 (사진 게시물 제외) */
+const canGetVideo = it => (it.platform === 'youtube' || it.platform === 'instagram') && !(it.photos || []).length && !/사진|게시물/.test(it.kind || '');
+
+/** 앱 안 재생이 실패하면 이유를 보여 주기 (조용히 처음으로 돌아가지 않게) */
+const VERR = { 1: '재생이 중단됐어요', 2: '파일을 받다가 끊겼어요', 3: '영상 형식을 풀지 못했어요', 4: '앱 화면이 이 영상 파일을 열지 못했어요' };
+function watchVideo(it) {
+  const v = $('#dVideo'); if (!v) return;
+  const show = why => {
+    if ($('#dVfail')) return;
+    const d = document.createElement('div');
+    d.id = 'dVfail'; d.className = 'sec warn';
+    d.innerHTML = `<div class="cmtx"><b>앱에서 재생이 안 돼요</b><div class="why">${esc(why)}</div><div class="bt"><button class="chip dark" data-dlvideo>다시 받기</button><button class="chip" data-vsave>갤러리로 저장</button></div></div>`;
+    $('#dVid').before(d);
+  };
+  v.addEventListener('error', () => { const e = v.error; show((VERR[e && e.code] || '알 수 없는 오류') + (e && e.message ? ' · ' + e.message : '') + (e ? ' (코드 ' + e.code + ')' : '')); });
+  // 오류 없이 1초 만에 처음으로 돌아가는 경우: 재생을 눌렀는데 4초 뒤에도 거의 안 나갔으면
+  v.addEventListener('play', () => setTimeout(() => {
+    if (v.isConnected && v.currentTime < 1.5 && (v.paused || v.readyState < 3)) show(`재생이 시작되자마자 멈췄어요 (읽은 정도 ${v.readyState}/4 · 받기 상태 ${v.networkState} · ${Math.round(v.currentTime * 10) / 10}초)`);
+  }, 4000));
 }
