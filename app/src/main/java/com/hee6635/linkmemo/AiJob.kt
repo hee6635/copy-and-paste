@@ -245,8 +245,10 @@ internal fun SaveService.autoCaptures(id: String, video: File, shots: JSONArray,
         val t = k.optDouble("t", -1.0); if (t < 0) continue
         val capId = "cap_ai_${System.currentTimeMillis()}_$i"
         val f = File(dir, "$capId.jpg")
-        if (!Ocr.frame(video, t, f)) continue
-        val c = JSONObject().put("id", capId).put("t", t).put("file", f.name).put("text", "").put("memo", k.optString("why")).put("ocr", "busy").put("ai", true)
+        // 장소 사진: 글자가 한 자씩 나오는 영상이 있어서 0.5 · 1.5 · 2.5초 뒤 중 장소 이름이 가장 잘 보이는 장면
+        val t2 = if (k.optString("sec") == "places") bestFrame(video, t - 0.6, k.optString("why"), f) else t.takeIf { Ocr.frame(video, it, f) }
+        if (t2 == null) continue
+        val c = JSONObject().put("id", capId).put("t", t2).put("file", f.name).put("text", "").put("memo", k.optString("why")).put("ocr", "busy").put("ai", true)
         attachFor(k, ai)?.let { c.put("at", it) }
         made += c
     }
@@ -259,3 +261,22 @@ internal fun SaveService.autoCaptures(id: String, video: File, shots: JSONArray,
     })
     made.forEach { Ocr.run(this, id, it.getString("id"), File(dir, it.getString("file"))) }
 }
+
+/** 장소가 나온 시각 뒤 장면 3장 중 장소 이름 글자가 가장 많이 읽히는 것을 out 에 (같으면 글자가 많은 쪽). 고른 시각, 다 실패면 null */
+internal fun bestFrame(video: File, t0: Double, name: String, out: File): Double? {
+    val key = name.replace(Regex("\\s"), "")
+    var best: Double? = null; var bestScore = -1
+    for (d in listOf(0.5, 1.5, 2.5)) {
+        val tmp = File(out.parentFile, out.nameWithoutExtension + "_c.jpg")
+        if (!Ocr.frame(video, t0 + d, tmp)) continue
+        val txt = Ocr.textOf(tmp).replace(Regex("\\s"), "")
+        val score = nameScore(key, txt) * 1000 + minOf(txt.length, 999)
+        if (score > bestScore) { bestScore = score; best = t0 + d; tmp.copyTo(out, true) }
+        tmp.delete()
+    }
+    return best
+}
+
+/** 장소 이름 글자 중 읽힌 글자 수 (전부 읽히면 이름 길이 + 1) */
+internal fun nameScore(key: String, txt: String): Int =
+    if (key.isNotEmpty() && txt.contains(key, true)) key.length + 1 else key.count { txt.contains(it, true) }
