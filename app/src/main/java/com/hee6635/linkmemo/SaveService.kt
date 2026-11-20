@@ -29,23 +29,6 @@ import java.io.File
 import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
 
-/** yt-dlp · ffmpeg 준비 (처음 한 번 압축을 풀어서 몇 초 걸림) */
-object Tools {
-    @Volatile private var ready = false
-    @Synchronized fun init(ctx: Context) {
-        if (ready) return
-        YoutubeDL.getInstance().init(ctx.applicationContext)
-        FFmpeg.getInstance().init(ctx.applicationContext)
-        ready = true
-    }
-}
-
-object Prefs {
-    private fun sp(ctx: Context) = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
-    fun quality(ctx: Context): String = sp(ctx).getString("quality", "720") ?: "720"
-    fun setQuality(ctx: Context, q: String) = sp(ctx).edit().putString("quality", q).apply()
-}
-
 /**
  * 링크 저장 일꾼. 공유 · 붙여넣기로 받은 메모를 하나씩 처리한다.
  * - 유튜브 · 인스타: yt-dlp 로 설명 · 댓글 · 썸네일 (+ 영상)

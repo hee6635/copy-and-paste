@@ -70,10 +70,10 @@ object Gemini {
     }
 
     // 중지: 지금 연결을 끊어서 기다림을 바로 끝냄
-    @Volatile private var cancelled = false
+    @Volatile internal var cancelled = false
     @Volatile private var current: HttpURLConnection? = null
     fun cancel() { cancelled = true; Thread { try { current?.disconnect() } catch (_: Throwable) {} }.start() }
-    private fun checkCancel() { if (cancelled) throw IllegalStateException("중지했어요") }
+    internal fun checkCancel() { if (cancelled) throw IllegalStateException("중지했어요") }
 
     /** 이번 정리 기록: 단계마다 걸린 시간 · 결과 */
     class RunLog(private val ctx: Context) {
@@ -152,7 +152,7 @@ object Gemini {
             else -> e.message ?: e.toString()
         }
     }
-    private const val BASE = "https://generativelanguage.googleapis.com"
+    internal const val BASE = "https://generativelanguage.googleapis.com"
 
     private fun sp(ctx: Context) = ctx.getSharedPreferences("ai", Context.MODE_PRIVATE)
     fun key(ctx: Context) = sp(ctx).getString("key", "") ?: ""
@@ -161,9 +161,9 @@ object Gemini {
     fun setOn(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("on", v).apply()
     private fun month() = SimpleDateFormat("yyyyMM", Locale.US).format(Date())
     fun usedThisMonth(ctx: Context) = sp(ctx).getInt("n" + month(), 0)
-    private fun count(ctx: Context) { val k = "n" + month(); sp(ctx).edit().putInt(k, sp(ctx).getInt(k, 0) + 1).apply() }
+    internal fun count(ctx: Context) { val k = "n" + month(); sp(ctx).edit().putInt(k, sp(ctx).getInt(k, 0) + 1).apply() }
 
-    private fun http(method: String, url: String, key: String, body: ByteArray?, headers: Map<String, String> = emptyMap(),
+    internal fun http(method: String, url: String, key: String, body: ByteArray?, headers: Map<String, String> = emptyMap(),
                      timeout: Int = 120000): Pair<HttpURLConnection, String> {
         checkCancel()
         val c = URL(url).openConnection() as HttpURLConnection
@@ -202,7 +202,7 @@ object Gemini {
     }
 
     /** 영상 올리기 (Files API, 이어 올리기 방식) → file uri */
-    private fun upload(ctx: Context, key: String, f: File, mime: String, log: RunLog? = null): String {
+    internal fun upload(ctx: Context, key: String, f: File, mime: String, log: RunLog? = null): String {
         val tUp = System.currentTimeMillis()
         val start = JSONObject().put("file", JSONObject().put("display_name", f.name)).toString().toByteArray()
         val (c1, _) = http("POST", "$BASE/upload/v1beta/files", key, start, mapOf(
@@ -236,81 +236,6 @@ object Gemini {
         log?.add("영상 처리 대기", System.currentTimeMillis() - tWait, "확인 ${tries}번", state != "FAILED")
         if (state == "FAILED") throw IllegalStateException("Gemini 가 영상을 읽지 못했어요")
         return uri
-    }
-
-    private fun prompt(item: JSONObject, folders: List<String>, withVideo: Boolean): String {
-        val sb = StringBuilder()
-        sb.append("""너는 사용자가 저장한 SNS 게시물 · 영상 · 웹페이지를 메모로 정리하는 도우미야. 한국어로, 짧고 쉽게.
-규칙:
-- summary: "꼭 알아둘 팁" 2~3줄. 각 줄 40자 안팎. places 의 info 에 이미 쓴 말 · 장소 나열은 되풀이하지 말고, 전체에 걸친 실용 팁(주의 · 추천 · 고르는 법 · 받는 법)만. 숫자 · 시간대는 [[ ]] 로 (예: [[오전]]에 가기). 영상(말 · 화면 글자) · 설명 · 댓글 · 작성자 답글에서. 광고 · 해시태그 · 인사는 빼기. 장소도 레시피도 아닌 영상이면 핵심 내용 2~4줄.
-- tags: 2~5개, # 없이 짧은 명사 (지명 · 음식 · 주제).
-- folder: 아래 "내 폴더" 중 가장 맞는 것의 경로를 그대로 쓰기. 맞는 게 없으면 "큰폴더 › 작은폴더" 또는 "큰폴더" 형식으로 새로 제안. 작은 폴더는 지명이나 구체 주제일 때만.
-- places: 가게 · 장소 · 숙소가 나오면 나온 순서대로. name 은 짧은 이름, t 는 처음 보이는 시각(초, 영상이 아니면 -1), info 는 그곳의 핵심 정보 한 줄(메뉴 · 가격 · 시간대 · 주의 · 추천). info 의 숫자 · 시간은 [[ ]] 로. 장소가 없으면 빈 목록.
-- course: 빈 목록 (places 로 대신).
-- category: 아래 목록 중 딱 하나 (큰 갈래): ${CATEGORIES.joinToString(", ")}
-- kind: 요리법이면 recipe, 할 일 · 준비물 목록이면 checklist, 그 밖은 general.
-- recipe: kind 가 recipe 일 때만. 재료(양 포함)와 순서.
-- checklist: kind 가 checklist 일 때만.
-- tips: 영상(말 · 화면 글자) · 댓글 · 작성자 답글에서 실제로 쓸모 있는 정보만 0~6개 (추천 · 주의 · 가격 · 시간 · 위치 등). 인사 · 태그 · 감탄은 빼기. from 은 영상이면 video(그 시각 t 초), 작성자 답글이면 author, 댓글이면 comment(t 는 -1). who 는 아이디(영상이면 빈칸).
-- star: 정보가 있는 댓글의 번호(0부터) 목록.
-""")
-        sb.append("- facts: 영상 · 글에서 나온 구체 정보만 0~8개 (가게 · 장소 이름, 가격, 시간, 수치, 방법). 영상에서 나온 것이면 t 에 그 시각(초), 아니면 -1.\n")
-        if (withVideo) sb.append("- keyshots: 캡처해 둘 만한 중요한 장면 3~5개 (메뉴판 · 가격표 · 간판 · 지도 · 완성 요리처럼 정보가 화면에 보이는 순간). t 는 그 시각(초, 화면이 또렷한 순간), why 는 무엇이 보이는지 짧게, sec · idx 는 사진에 보이는 것이 그 줄에 직접 나오는 경우만 (summary · facts · steps(레시피 순서) 와 그 줄 번호 0부터). 장소 사진은 places 의 t 로 따로 찍으니 keyshots 에 넣지 않아도 됨. 예: 망고빙수 사진을 호텔 줄에 붙이면 안 됨. 맞는 줄이 없으면 idx 는 -1.\n")
-        else sb.append("- keyshots: 빈 목록.\n")
-        sb.append("- 번역: transcript 의 말이나 화면 글자가 한국어가 아니면 text 는 원문 그대로 두고 ko 에 자연스러운 한국어 번역 (한국어면 ko 는 빈칸). desc_ko 는 [설명]이 한국어가 아니면 한국어 번역, 한국어면 빈칸. 다른 칸(summary · places · tips 등)은 언제나 한국어로.\n")
-        if (withVideo) sb.append("- transcript: 영상에서 말하는 내용을 시간(초)과 함께 받아쓰기. 화면에 크게 나오는 글자도 [화면] 으로 넣기. 말이 없으면 빈 목록.\n")
-        else sb.append("- transcript: 빈 목록.\n")
-        sb.append("\n내 폴더: ").append(if (folders.isEmpty()) "(없음)" else folders.joinToString(" / ")).append("\n\n")
-        sb.append("[출처] ").append(item.optString("platform")).append(" · ").append(item.optString("author")).append("\n")
-        sb.append("[제목] ").append(item.optString("title")).append("\n")
-        item.optString("desc").takeIf { it.isNotBlank() }?.let { sb.append("[설명]\n").append(it.take(6000)).append("\n") }
-        item.optString("body").takeIf { it.isNotBlank() }?.let { sb.append("[본문]\n").append(it.take(8000)).append("\n") }
-        item.optString("memo").takeIf { it.isNotBlank() }?.let { sb.append("[내 메모] ").append(it).append("\n") }
-        val cs = item.optJSONArray("comments")
-        if (cs != null && cs.length() > 0) {
-            sb.append("[댓글]\n")
-            for (i in 0 until cs.length()) {
-                val c = cs.getJSONObject(i)
-                sb.append(i).append(". @").append(c.optString("a")).append(": ").append(c.optString("t").take(400)).append("\n")
-                val r = c.optJSONArray("r")
-                if (r != null) for (k in 0 until r.length()) {
-                    val x = r.getJSONObject(k)
-                    sb.append("   ↳ [작성자 답글] @").append(x.optString("a")).append(": ").append(x.optString("t").take(400)).append("\n")
-                }
-            }
-        }
-        return sb.toString()
-    }
-
-    private fun schema(): JSONObject {
-        fun str() = JSONObject().put("type", "STRING")
-        fun arr(of: JSONObject) = JSONObject().put("type", "ARRAY").put("items", of)
-        fun obj(vararg p: Pair<String, JSONObject>, req: List<String> = emptyList()) = JSONObject().put("type", "OBJECT")
-            .put("properties", JSONObject().also { o -> p.forEach { o.put(it.first, it.second) } })
-            .also { if (req.isNotEmpty()) it.put("required", JSONArray(req)) }
-        return obj(
-            "summary" to arr(str()),
-            "tags" to arr(str()),
-            "folder" to str(),
-            "kind" to JSONObject().put("type", "STRING").put("enum", JSONArray(listOf("recipe", "checklist", "general"))),
-            "category" to JSONObject().put("type", "STRING").put("enum", JSONArray(CATEGORIES)),
-            "recipe" to obj("ingredients" to arr(str()), "steps" to arr(str())),
-            "checklist" to arr(str()),
-            "tips" to arr(obj("text" to str(), "from" to str(), "who" to str(), "t" to JSONObject().put("type", "NUMBER"), req = listOf("text"))),
-            "keyshots" to arr(obj("t" to JSONObject().put("type", "NUMBER"), "why" to str(),
-                "sec" to JSONObject().put("type", "STRING").put("enum", JSONArray(listOf("summary", "facts", "steps"))),
-                "idx" to JSONObject().put("type", "INTEGER"), req = listOf("t", "why"))),
-            "star" to arr(JSONObject().put("type", "INTEGER")),
-            "transcript" to arr(obj("t" to JSONObject().put("type", "NUMBER"), "text" to str(), "ko" to str(), req = listOf("t", "text"))),
-            "desc_ko" to str(),
-            "facts" to arr(obj("t" to JSONObject().put("type", "NUMBER"), "text" to str(), req = listOf("t", "text"))),
-            "course" to arr(str()),
-            "places" to arr(obj("name" to str(), "t" to JSONObject().put("type", "NUMBER"), "info" to str(), req = listOf("name", "t", "info"))),
-            req = listOf("summary", "tags", "folder", "kind", "category", "tips", "star", "transcript")
-        ).put("propertyOrdering", JSONArray(listOf(
-            // 화면에 먼저 보일 것부터: 받아쓰기 → 정보 → 요약 → 코스 → 꿀팁 → 나머지
-            "transcript", "places", "facts", "summary", "course", "tips", "keyshots", "recipe", "checklist",
-            "tags", "folder", "kind", "category", "star", "desc_ko")))
     }
 
     /** 메모 하나 정리. 결과 JSON(ai) 을 돌려준다 */
@@ -456,7 +381,7 @@ object Gemini {
             .put("usageMetadata", usage ?: JSONObject()).put("modelVersion", ver).toString()
     }
 
-    private fun generate(ctx: Context, key: String, req: JSONObject, onStage: (String) -> Unit, log: RunLog, withVideo: Boolean,
+    internal fun generate(ctx: Context, key: String, req: JSONObject, onStage: (String) -> Unit, log: RunLog, withVideo: Boolean,
                          onPartial: ((String) -> Unit)? = null): Pair<String, String> {
         val tried = StringBuilder()
         val limit = if (withVideo) 120000 else 40000
@@ -502,135 +427,6 @@ object Gemini {
             }
         }
         throw IllegalStateException("모두 안 됨\n" + tried.toString().trim())
-    }
-
-    // ── 긴 영상: 5분씩 목차 ──
-    private fun mmss(sec: Double): String { val t = sec.toInt(); return "%d:%02d".format(t / 60, t % 60) }
-    /**
-     * 긴 영상 목차: 5분씩 나눠 차례로. 자막이 있으면 글로만(토큰 적음), 없으면 유튜브 링크의 그 구간을 5초에 한 장면만.
-     * onPart(지금 부분, 전체 부분, 지금까지 목차) 로 바로바로 화면에.
-     */
-    fun chapters(ctx: Context, item: JSONObject, onStage: (String) -> Unit, onPart: (Int, Int, JSONArray) -> Unit, log: RunLog): JSONArray {
-        val key = key(ctx)
-        if (key.isEmpty()) throw IllegalStateException("Gemini API 키가 없어요 (설정에서 넣어 주세요)")
-        cancelled = false
-        val dur = item.optDouble("duration", 0.0)
-        val parts = maxOf(1, kotlin.math.ceil(dur / 300.0).toInt())
-        val subs = item.optJSONArray("subs")
-        val hasSubs = subs != null && subs.length() > 0
-        val yt = ytWatchUrl(item.optString("url"))
-        val yc = item.optJSONArray("ytChapters")
-        val all = JSONArray()
-        fun str() = JSONObject().put("type", "STRING")
-        val schema = JSONObject().put("type", "OBJECT").put("properties", JSONObject().put("chapters", JSONObject().put("type", "ARRAY").put("items",
-            JSONObject().put("type", "OBJECT").put("properties", JSONObject().put("t", JSONObject().put("type", "NUMBER")).put("title", str()).put("info", str()))
-                .put("required", JSONArray(listOf("t", "title", "info")))))).put("required", JSONArray(listOf("chapters")))
-        log.add(if (hasSubs) "자막으로 보기" else "영상 듬성듬성 보기(5초에 한 장면)", 0, "${mmss(dur)} · ${parts}부분", true)
-        for (p in 0 until parts) {
-            checkCancel()
-            val st = p * 300.0; val en = minOf(dur, (p + 1) * 300.0)
-            onStage("${p + 1} / $parts 부분 보는 중 (${mmss(st)} – ${mmss(en)})")
-            val reqParts = JSONArray()
-            val ycText = StringBuilder()
-            if (yc != null) for (i in 0 until yc.length()) { val c = yc.getJSONObject(i); val t = c.optDouble("t"); if (t >= st - 1 && t < en) ycText.append("${mmss(t)} ${c.optString("title")}\n") }
-            val sb = StringBuilder()
-            sb.append("이 영상의 ${mmss(st)} ~ ${mmss(en)} 부분 목차를 만들어. 한국어로.\n")
-            sb.append("- chapters: 내용이 바뀌는 곳마다 1~4개. t 는 그 내용이 시작되는 시각(초, 영상 전체 기준 ${st.toInt()}~${en.toInt()} 사이), title 은 15자 안팎, info 는 그 부분의 핵심 정보 한 줄(추천 · 가격 · 방법 · 주의). 숫자 · 시간은 [[ ]] 로.\n")
-            sb.append("- 인사 · 구독 부탁 · 광고 부분은 빼기.\n")
-            if (ycText.isNotEmpty()) sb.append("- 유튜버가 만든 목차(이 경계를 따르기):\n").append(ycText)
-            sb.append("[제목] ").append(item.optString("title")).append("\n")
-            if (hasSubs) {
-                sb.append("[자막]\n")
-                for (i in 0 until subs!!.length()) { val x = subs.getJSONObject(i); val t = x.optDouble("t"); if (t >= st && t < en) sb.append("[${mmss(t)}] ").append(x.optString("text")).append("\n") }
-            } else if (yt != null) {
-                reqParts.put(JSONObject().put("file_data", JSONObject().put("file_uri", yt))
-                    .put("video_metadata", JSONObject().put("start_offset", "${st.toInt()}s").put("end_offset", "${en.toInt()}s").put("fps", 0.2)))
-            } else break
-            reqParts.put(JSONObject().put("text", sb.toString()))
-            val req = JSONObject()
-                .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", reqParts)))
-                .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("responseSchema", schema).put("temperature", 0.3)
-                    .also { if (!hasSubs) it.put("mediaResolution", "MEDIA_RESOLUTION_LOW") })
-            val (text, used) = generate(ctx, key, req, onStage, log, !hasSubs, null)
-            count(ctx)
-            val res = JSONObject(text)
-            Usage.ok(ctx, used, res.optJSONObject("usageMetadata")?.optInt("totalTokenCount") ?: 0)
-            val out = res.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text") ?: "{}"
-            val ch = try { JSONObject(out.trim().removePrefix("```json").removeSuffix("```").trim()).optJSONArray("chapters") } catch (_: Exception) { null } ?: JSONArray()
-            for (i in 0 until ch.length()) {
-                val c = ch.getJSONObject(i)
-                var t = c.optDouble("t", st)
-                if (t < st - 5) t += st          // 부분 안의 시각으로 답했으면 전체 시각으로
-                all.put(c.put("t", t.coerceIn(st, maxOf(st, en))))
-            }
-            onPart(p + 1, parts, all)
-        }
-        return all
-    }
-
-    // ── 내 저장함에 질문하기 ──
-    /** context: 화면이 만든 메모 목록(JSON 글). 답 = {"answer":"…","refs":["id",…]} */
-    fun ask(ctx: Context, question: String, context: String, history: String): String {
-        val key = key(ctx)
-        if (key.isEmpty()) throw IllegalStateException("Gemini API 키가 없어요 (설정에서 넣어 주세요)")
-        cancelled = false
-        val prompt = """너는 사용자가 저장해 둔 메모들에서 답을 찾아 주는 도우미야. 한국어로 짧고 쉽게.
-규칙:
-- 아래 [내 메모]에 있는 내용으로만 답하기. 없으면 "저장한 것 중에는 없어요"라고 말하고 비슷한 것이 있으면 알려 주기.
-- answer: 2~5줄. 가격 · 시간 · 장소 같은 구체 정보 위주. 숫자 · 시간은 [[ ]] 로 감싸기.
-- refs: 답에 쓴 메모의 id 목록 (많아야 5개, 관련 높은 순).
-[앞선 대화]
-$history
-[내 메모]
-$context
-[질문]
-$question"""
-        fun str() = JSONObject().put("type", "STRING")
-        val schema = JSONObject().put("type", "OBJECT").put("properties", JSONObject()
-            .put("answer", str()).put("refs", JSONObject().put("type", "ARRAY").put("items", str())))
-            .put("required", JSONArray(listOf("answer", "refs")))
-        val req = JSONObject()
-            .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-            .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("responseSchema", schema).put("temperature", 0.2))
-        val (text, used) = generate(ctx, key, req, {}, RunLog(ctx), false, null)
-        count(ctx)
-        val res = JSONObject(text)
-        Usage.ok(ctx, used, res.optJSONObject("usageMetadata")?.optInt("totalTokenCount") ?: 0)
-        val out = res.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")
-            ?: throw IllegalStateException("답이 비어 있어요")
-        return JSONObject(out.trim().removePrefix("```json").removeSuffix("```").trim()).put("model", used).toString()
-    }
-
-    // ── 검사용 ──
-    fun keyShape(k: String): String? = when {
-        k.isEmpty() -> "키가 없어요"
-        k != k.trim() || k.contains(" ") || k.contains("\n") -> "키에 공백 · 줄바꿈이 섞였어요"
-        !k.startsWith("AIza") -> "AIza 로 시작하지 않아요 (다른 키를 복사했을 수 있어요)"
-        k.length != 39 -> "길이가 ${k.length}자예요 (보통 39자 → 잘렸거나 더 붙었어요)"
-        else -> null
-    }
-
-    /** 키로 모델 목록 받기 → 사용 가능한 모델 이름들 */
-    fun listModels(ctx: Context): List<String> {
-        val (_, t) = http("GET", "$BASE/v1beta/models?pageSize=200", key(ctx), null, timeout = 20000)
-        val a = JSONObject(t).optJSONArray("models") ?: JSONArray()
-        return (0 until a.length()).map { a.getJSONObject(it).optString("name").removePrefix("models/") }
-    }
-
-    fun pingModel(ctx: Context, model: String): String {
-        val req = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", "한 단어로: 안녕")))))
-        val (_, t) = http("POST", "$BASE/v1beta/models/$model:generateContent", key(ctx), req.toString().toByteArray(), mapOf("Content-Type" to "application/json"), 30000)
-        return JSONObject(t).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
-            ?.optJSONObject(0)?.optString("text")?.trim()?.take(20) ?: "응답 ✓"
-    }
-
-    /** 작은 파일을 올렸다가 지우기 (영상 올리기 통로 확인) */
-    fun uploadTest(ctx: Context): String {
-        val f = File(ctx.cacheDir, "gemini_test.txt").also { it.writeText("linkmemo test") }
-        val uri = upload(ctx, key(ctx), f, "text/plain")
-        val name = "files/" + uri.substringAfterLast("/files/")
-        try { http("DELETE", "$BASE/v1beta/$name", key(ctx), null, timeout = 15000) } catch (_: Throwable) {}
-        return "올리기 ✓"
     }
 
 }

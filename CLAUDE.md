@@ -9,10 +9,10 @@
 - 한국어 · 쉬운 말 · 짧게. 결과 먼저.
 - UI: 미니멀. 회색 작은 설명 글 넣지 않기. 회색 바탕 + 흰 카드 + 둥근 모서리, 강조색은 잉크 블랙(#191f28). 모션은 transform · opacity 만.
 - 시안은 사진(design/)으로 먼저 보여준다. 고를 것이 있으면 번호 붙인 여러 안을 한 장에.
-- 구조: 안드로이드(Kotlin) 껍데기 + 화면은 app/src/main/assets/web (index.html · app.css · js/*.js)
+- 구조: 안드로이드(Kotlin) 껍데기 + 화면은 app/src/main/assets/web (index.html · app.css · ai.css(AI 부분) · js/*.js)
   - 화면 js (index.html 에서 이 순서로 불러옴, 서로 맨 위 변수 · 함수를 같이 씀):
-    dev.js(가짜 브리지) → core.js(공통) → home.js → save.js → detail.js → ai.js → capture.js → settings.js → main.js(소식 · 누르기 · 시작, 맨 마지막)
-  - Kotlin: SaveService.kt(저장 순서 · 영상/웹 읽기) · AiJob.kt(AI 정리 · 자동 캡처) · Gemini.kt · Ig.kt(인스타) · Ocr.kt(글자 읽기 · 장면 자르기)
+    dev.js(가짜 브리지) → core.js(공통) → home.js → save.js → detail.js → ai.js → capture.js → settings.js → ask.js(질문) → slides.js → main.js(소식 · 누르기 · 시작, 맨 마지막)
+  - Kotlin: SaveService.kt(저장 순서 · 영상/웹 읽기) · AiJob.kt(AI 정리 · 자동 캡처) · Gemini.kt(+ GeminiPrompt.kt 요청 글 · GeminiMore.kt 목차 · 질문 · 검사) · Ig.kt(인스타) · Ocr.kt(글자 읽기 · 장면 자르기)
     · Diag.kt(검사) · Store.kt(데이터) · Common.kt(Events · Tools · Prefs) · PhoneState.kt · MainActivity.kt(브리지) · LoginActivity.kt
   - 데이터: files/data/items.json · meta.json(폴더 · 순서) + files/items/<id>/
   - 새 기능은 맞는 파일에 넣고, 한 파일이 400~500줄을 넘으면 나눈다.

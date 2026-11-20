@@ -29,6 +29,23 @@ import java.io.File
 import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
 
+/** yt-dlp · ffmpeg 준비 (처음 한 번 압축을 풀어서 몇 초 걸림) */
+object Tools {
+    @Volatile private var ready = false
+    @Synchronized fun init(ctx: Context) {
+        if (ready) return
+        YoutubeDL.getInstance().init(ctx.applicationContext)
+        FFmpeg.getInstance().init(ctx.applicationContext)
+        ready = true
+    }
+}
+
+object Prefs {
+    private fun sp(ctx: Context) = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    fun quality(ctx: Context): String = sp(ctx).getString("quality", "720") ?: "720"
+    fun setQuality(ctx: Context, q: String) = sp(ctx).edit().putString("quality", q).apply()
+}
+
 /** 화면에 "이 메모가 바뀌었어요"를 알리는 통로 (MainActivity 가 듣는다) */
 object Events {
     private val main = Handler(Looper.getMainLooper())
