@@ -1,0 +1,14 @@
+{
+  "extraKnownMarketplaces": {
+    "ponytail": {
+      "source": { "source": "github", "repo": "DietrichGebert/ponytail" }
+    },
+    "claude-video": {
+      "source": { "source": "github", "repo": "bradautomates/claude-video" }
+    }
+  },
+  "enabledPlugins": {
+    "ponytail@ponytail": true,
+    "watch@claude-video": true
+  }
+}
