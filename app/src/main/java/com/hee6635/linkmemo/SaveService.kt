@@ -344,31 +344,6 @@ class SaveService : Service() {
     }
 
     /** 영상 파일만 받기 (진행률 표시) → video.<확장자> */
-    internal fun downloadVideoFile(id: String, url: String): String? {
-        Tools.init(this)
-        val dir = Store.dir(this, id)
-        dir.listFiles()?.filter { it.name.startsWith("media.") }?.forEach { it.delete() }
-        val req = YoutubeDLRequest(url)
-        req.addOption("--no-playlist"); req.addOption("--no-mtime")
-        req.addOption("-f", formatFor(Prefs.quality(this)))
-        req.addOption("--merge-output-format", "mp4")
-        // 합칠 때: 소리는 표준 AAC 로 바꿈(인스타 새 소리 형식은 앱 화면이 못 풀어 0.2초에 멈춤) · 목차(moov)는 파일 앞에. 영상은 그대로 복사
-        req.addOption("--postprocessor-args", "Merger+ffmpeg_o1:-c:a aac -b:a 160k -movflags +faststart")
-        req.addOption("--socket-timeout", "30")
-        req.addOption("-o", File(dir, "media.%(ext)s").absolutePath)
-        if (platformOf(url) == "instagram") Ig.cookieFile(this)?.let { req.addOption("--cookies", it.absolutePath) }
-        stage(id, "영상 받는 중", 0)
-        var last = 0L
-        YoutubeDL.getInstance().execute(req, "video-$id", false) { p, _, _ ->
-            val now = System.currentTimeMillis()
-            if (now - last > 700) { last = now; val pct = p.toInt().coerceIn(0, 100); stage(id, "영상 받는 중", pct); updateNotif("저장 중 $pct%") }
-        }
-        val v = dir.listFiles()?.firstOrNull { it.name.startsWith("media.") && it.extension in setOf("mp4", "webm", "mkv", "mov") } ?: return null
-        val name = "video." + v.extension
-        v.renameTo(File(dir, name))
-        dir.listFiles()?.filter { it.name.startsWith("media.") }?.forEach { it.delete() }
-        return name
-    }
 
     /** 긴 영상도 [영상 받기]를 누르면 받기 */
     private fun downloadLater(id: String) {
@@ -410,10 +385,6 @@ class SaveService : Service() {
         return out
     }
 
-    private fun formatFor(q: String): String = when (q) {
-        "best" -> "bv*+ba/b"
-        else -> "bv*[height<=$q][ext=mp4]+ba[ext=m4a]/b[height<=$q][ext=mp4]/bv*[height<=$q]+ba/b[height<=$q]/b"
-    }
 
     /** 좋아요 많은 순 20개 + 각 댓글에 단 작성자 답글 */
     private fun topComments(arr: JSONArray?): JSONArray {

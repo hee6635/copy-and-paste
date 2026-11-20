@@ -238,7 +238,8 @@ function watchVideo(it) {
     if ($('#dVfail')) return;
     const d = document.createElement('div');
     d.id = 'dVfail'; d.className = 'sec warn';
-    d.innerHTML = `<div class="cmtx"><b>앱에서 재생이 안 돼요</b><div class="why">${esc(why)}</div><div class="bt"><button class="chip dark" data-dlvideo>다시 받기</button><button class="chip" data-vsave>갤러리로 저장</button></div></div>`;
+    const af = it.audioFmt && it.audioFmt !== 'AAC-LC' ? `<div class="why">소리 형식: ${esc(it.audioFmt)}${it.audioFmt === 'xHE-AAC' ? ' (인스타 새 형식 · 앱 화면이 못 풀어요, 갤러리에선 돼요)' : ''}</div>` : '';
+    d.innerHTML = `<div class="cmtx"><b>앱에서 재생이 안 돼요</b><div class="why">${esc(why)}</div>${af}<div class="bt"><button class="chip dark" data-dlvideo>다시 받기</button><button class="chip" data-vsave>갤러리로 저장</button></div></div>`;
     $('#dVid').before(d);
   };
   v.addEventListener('error', () => { const e = v.error; show((VERR[e && e.code] || '알 수 없는 오류') + (e && e.message ? ' · ' + e.message : '') + (e ? ' (코드 ' + e.code + ')' : '')); });

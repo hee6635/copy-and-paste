@@ -169,7 +169,8 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
         // AI 가 고른 중요 장면 자동 캡처 (영상 파일이 있을 때: 저장한 영상 · 잠깐 받은 영상 · 유튜브는 작게 잠깐 받기)
         val shots = JSONArray()
         ai.optJSONArray("places")?.let { pl -> for (i in 0 until pl.length()) { val p0 = pl.getJSONObject(i); val tt = p0.optDouble("t", -1.0); if (tt >= 0) shots.put(JSONObject().put("t", tt + 0.6).put("why", p0.optString("name")).put("sec", "places").put("idx", i)) } }
-        ai.optJSONArray("keyshots")?.let { k -> for (i in 0 until k.length()) shots.put(k.get(i)) }
+        // 장소는 전부 + 중요 장면은 5장까지
+        ai.optJSONArray("keyshots")?.let { k -> for (i in 0 until minOf(5, k.length())) shots.put(k.get(i)) }
         if (shots.length() > 0) {
             try {
                 emit(Store.patch(this, id) { it.put("aiBusy", "AI 중요 장면 캡처 중") })
@@ -239,7 +240,7 @@ internal fun SaveService.autoCaptures(id: String, video: File, shots: JSONArray,
         for (i in 0 until arr.length()) { val c = arr.getJSONObject(i); if (c.optBoolean("ai")) File(dir, c.optString("file")).delete() }
     }
     val made = mutableListOf<JSONObject>()
-    for (i in 0 until minOf(10, shots.length())) {
+    for (i in 0 until minOf(30, shots.length())) {
         val k = shots.getJSONObject(i)
         val t = k.optDouble("t", -1.0); if (t < 0) continue
         val capId = "cap_ai_${System.currentTimeMillis()}_$i"
