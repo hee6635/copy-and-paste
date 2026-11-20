@@ -345,14 +345,15 @@ class SaveService : Service() {
 
     /** 영상 파일만 받기 (진행률 표시) → video.<확장자> */
     internal fun downloadVideoFile(id: String, url: String): String? {
+        Tools.init(this)
         val dir = Store.dir(this, id)
         dir.listFiles()?.filter { it.name.startsWith("media.") }?.forEach { it.delete() }
         val req = YoutubeDLRequest(url)
         req.addOption("--no-playlist"); req.addOption("--no-mtime")
         req.addOption("-f", formatFor(Prefs.quality(this)))
         req.addOption("--merge-output-format", "mp4")
-        // 합칠 때 목차(moov)를 파일 앞에: 앱 화면은 앞부터 받아 가며 재생해서, 목차가 끝에 있으면 1초만 나오고 멈춤
-        req.addOption("--postprocessor-args", "Merger+ffmpeg_o1:-movflags +faststart")
+        // 합칠 때: 소리는 표준 AAC 로 바꿈(인스타 새 소리 형식은 앱 화면이 못 풀어 0.2초에 멈춤) · 목차(moov)는 파일 앞에. 영상은 그대로 복사
+        req.addOption("--postprocessor-args", "Merger+ffmpeg_o1:-c:a aac -b:a 160k -movflags +faststart")
         req.addOption("--socket-timeout", "30")
         req.addOption("-o", File(dir, "media.%(ext)s").absolutePath)
         if (platformOf(url) == "instagram") Ig.cookieFile(this)?.let { req.addOption("--cookies", it.absolutePath) }

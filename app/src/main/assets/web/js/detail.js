@@ -29,10 +29,13 @@ function renderDetail(full) {
   const it = byId(cur); if (!it) return;
   $('#dTopTitle').textContent = it.title || '';
   const sc = $('#dScroll');
+  // 영상을 새로 받았으면(처음 · 다시 받기) 영상 칸을 다시 만듦
+  const dv = $('#dVideo');
+  if (it.video && (!dv || dv.dataset.at !== String(it.videoAt || ''))) full = true;
   if (full || !sc.querySelector('.meta')) {
     let media = '';
     if (it.video) {
-      media = `<div class="video hide" id="dVid"><video id="dVideo" src="${fileUrl(it.id, it.video)}${it.videoAt ? '?v=' + it.videoAt : ''}" ${it.thumb ? `poster="${fileUrl(it.id, it.thumb)}"` : ''} controls playsinline preload="metadata"></video>
+      media = `<div class="video hide" id="dVid"><video id="dVideo" data-at="${it.videoAt || ''}" src="${fileUrl(it.id, it.video)}${it.videoAt ? '?v=' + it.videoAt : ''}" ${it.thumb ? `poster="${fileUrl(it.id, it.thumb)}"` : ''} controls playsinline preload="metadata"></video>
         <button class="capbtn" id="dCap"><svg class="ic" viewBox="0 0 24 24"><path d="M4 8a1 1 0 0 1 1-1h2.5l1.5-2h6l1.5 2H19a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>캡처</button><div class="flash" id="dFlash"></div></div>`;
     }
     accOpen = {};
@@ -46,13 +49,15 @@ function renderDetail(full) {
   }
   const th = it.thumb ? `<button class="hthumb" ${it.video ? 'data-vshow' : ''} aria-label="${it.video ? '영상 보기' : '대표 그림'}"><img src="${fileUrl(it.id, it.thumb)}" alt="">${it.video ? PLAY : ''}</button>`
     : it.video ? `<button class="hthumb n" data-vshow aria-label="영상 보기">${PLAY}</button>` : '';
-  const th2 = !it.video && canGetVideo(it) && it.thumb ? th.replace('<button class="hthumb"', '<button class="hthumb" data-dlask') : th;
+  const busy = it.status === 'saving';
+  const th2 = busy ? `<div class="hthumb n dl"><b>${it.progress || 0}%</b></div>` : !it.video && canGetVideo(it) && it.thumb ? th.replace('<button class="hthumb"', '<button class="hthumb" data-dlask') : th;
+  const verr = !busy && it.videoError ? `<div class="vfail"><b>영상을 못 받았어요</b><span>${esc(it.videoError)}</span><button class="chip dark" data-dlvideo>다시 시도</button></div>` : '';
   sc.querySelector('.meta').innerHTML = `<div class="s">${esc(PLAT[it.platform] || '')}${it.author ? ' · ' + esc(it.author) : ''} · ${fmtD(it.createdAt)}</div>
     <div class="hrow"><h2>${esc(it.title || it.url)}</h2>${th2}</div>
     <div class="chiprow"><button class="fchip" id="dFolder"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>${esc(fPath(it.folder) || '폴더 없음')}<svg class="ic chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
     <button class="fchip" id="dCat">${esc(it.category ? catLabel(it.category) : '키워드 없음')}<svg class="ic chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
     ${(it.tags || []).map(t => `<button class="tg" data-tag="${esc(t)}">#${esc(t)}</button>`).join('')}
-    <button class="add" id="dAddTag" aria-label="태그 추가"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>`;
+    <button class="add" id="dAddTag" aria-label="태그 추가"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>${verr}`;
   if (!it.video) renderMedia(it);
   if (full) watchVideo(it);
   renderAi(it);

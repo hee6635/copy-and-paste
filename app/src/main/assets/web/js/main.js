@@ -97,8 +97,8 @@ document.addEventListener('click', e => {
     meta.order = meta.order.filter(id => !ids.includes(id)); saveMeta(); endSelect(); toast(ids.length + '개를 지웠어요');
   });
   if (t.closest('#ordDone')) { saveOrder(); closePage('order'); if (selecting) endSelect(); toast('순서를 바꿨어요'); return; }
-  if (t.closest('[data-dlvideo]')) { A.downloadVideo(cur); toast('영상을 받는 중이에요'); return; }
-  if (t.closest('[data-dlask]')) { const id = cur; confirmAsk('영상을 받을까요?', '받기', () => { A.downloadVideo(id); toast('영상을 받는 중이에요'); }); return; }
+  if (t.closest('[data-dlvideo]')) { const it = byId(cur); if (it.status === 'saving') return toast('받는 중이에요'); it.status = 'saving'; it.stage = '영상 받는 중'; it.progress = 0; renderDetail(false); A.downloadVideo(cur); toast('영상을 받는 중이에요'); return; }
+  if (t.closest('[data-dlask]')) { const id = cur; confirmAsk('영상을 받을까요?', '받기', () => { const it = byId(id); it.status = 'saving'; it.stage = '영상 받는 중'; it.progress = 0; renderDetail(false); A.downloadVideo(id); }, true); return; }
   if (t.closest('[data-vsave]')) { $('#aSave').click(); return; }
   const cs2 = t.closest('[data-chsub]'); if (cs2) { cs2.nextElementSibling.classList.toggle('hide'); cs2.textContent = cs2.nextElementSibling.classList.contains('hide') ? '이 부분 자막 ⌄' : '접기 ⌃'; return; }
   const lm = t.closest('[data-lim]'); if (lm) { const m = lm.dataset.lim; return ask(mLabel(m) + ' 하루 한도', '한도 (번)', v => { const n = parseInt(v, 10); if (n > 0) { A.setLimit(m, n); renderUsage(); } }, lm.dataset.v); }

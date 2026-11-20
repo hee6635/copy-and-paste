@@ -74,8 +74,10 @@ function ask(title, label, cb, val) {
   openSheet('askSheet'); setTimeout(() => $('#askInput').focus(), 350);
 }
 let cfCb = null;
-function confirmAsk(title, yes, cb) {
+/** safe: 지우기 같은 위험한 일이 아니면 검정 버튼 */
+function confirmAsk(title, yes, cb, safe) {
   cfCb = cb; $('#cfTitle').textContent = title; $('#cfYes').textContent = yes || '지우기';
+  $('#cfYes').classList.toggle('red', !safe); $('#cfYes').classList.toggle('dark', !!safe);
   openSheet('confirmSheet');
 }
 
