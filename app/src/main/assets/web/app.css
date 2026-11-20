@@ -311,3 +311,6 @@ body.selecting .card .ck{display:flex}
 body[data-cs="small"] .card .th{aspect-ratio:16/9!important}
 body[data-cs="text"] .card .th{display:none}
 body[data-cs="text"] .card .ct{-webkit-line-clamp:2}
+.lb{font-weight:800;margin-right:2px}
+button.k{border:0;color:var(--fg)}
+.tip3 .k{align-self:flex-start;margin-top:2px}

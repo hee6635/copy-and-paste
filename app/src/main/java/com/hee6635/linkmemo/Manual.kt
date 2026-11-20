@@ -31,10 +31,10 @@ object Manual {
         sb.append("""
 
 [답 형식] 설명 · 인사 없이 JSON 하나만 ```json 코드 블록으로. 키:
-summary(문자열 목록), tags(문자열 목록), folder(문자열), kind("recipe"|"checklist"|"general"), category(문자열),
-places([{name, t, info}]), facts([{t, text}]), tips([{text, from, who, t}]), star(숫자 목록),
-recipe({servings, ingredients, steps}), checklist(문자열 목록), events([{title, date, time, end, place}]),
-transcript([{t, text, ko}]), desc_ko(문자열), keyshots(빈 목록), course(빈 목록).
+category(문자열), folder(문자열), kind("recipe"|"checklist"|"general"), area(문자열), listName(문자열),
+places([{name, t, info, need}]), recipe({servings, ingredients, steps: [{text, t}]}), checklist(문자열 목록),
+events([{title, date, time, end, place}]), tips([{label, text, from, t, who}]), star(숫자 목록), tags(문자열 목록),
+keyshots(빈 목록), desc_ko(문자열), transcript([{t, text, ko}]).
 """)
         return sb.toString()
     }
@@ -52,14 +52,15 @@ transcript([{t, text, ko}]), desc_ko(문자열), keyshots(빈 목록), course(�
         }
     }
 
-    fun looksLike(text: String) = text.contains("\"summary\"") && text.contains("{")
+    fun looksLike(text: String) = (text.contains("\"tips\"") || text.contains("\"summary\"")) && text.contains("{")
 
     /** 답 글에서 JSON 을 꺼내 메모에 넣기. 넣은 메모를 돌려줌 (못 읽으면 null) */
     fun apply(ctx: Context, id: String, text: String): JSONObject? {
         val a = text.indexOf('{'); val b = text.lastIndexOf('}')
         if (a < 0 || b <= a) return null
         val ai = try { JSONObject(text.substring(a, b + 1)) } catch (_: Exception) { return null }
-        if (!ai.has("summary") && !ai.has("places") && !ai.has("recipe")) return null
+        if (!ai.has("tips") && !ai.has("summary") && !ai.has("places") && !ai.has("recipe")) return null
+        Gemini.normalize(ai)
         ai.put("at", System.currentTimeMillis()).put("model", "제미나이 앱").put("manual", true).put("video", false)
         val o = Store.patch(ctx, id) { mergeAi(it, ai) } ?: return null
         sp(ctx).edit().remove("id").apply()

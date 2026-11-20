@@ -32,7 +32,7 @@ function renderAi(it) {
   const chs = (ai.chapters || []).filter(c => c && c.title);
   if (chs.length) {
     h += longNote + `<div class="sec"><div class="sh"><b>꼭 알아둘 팁</b>${redo}</div>${runinfo}
-      ${sum.map((x, i) => `<div class="tip3">${srcChip(it, i) || '<b>·</b>'}<span>${rich(x)}</span></div>`).join('')}${suggHtml}</div>`;
+      ${sum.map((x, i) => `<div class="tip3">${srcChip(it, i) || '<b>·</b>'}<span>${tipLabel(it, i)}${rich(x)}</span></div>`).join('')}${suggHtml}</div>`;
     h += `<div class="sec"><div class="sh"><b>목차 ${chs.length}</b>${(it.ytChapters || []).length ? '<span class="badge2">유튜버 목차</span>' : ''}</div>${chs.map((c, i) => chapterRow(it, chs, i)).join('')}</div>`;
     if (places.length) h += `<div class="sec"><div class="sh"><b>${pName} ${places.length}</b></div>${places.map((p, i) => placeRow(it, p, i)).join('')}${routeHtml(it, places)}</div>`;
     if (it.aiError) h += `<div class="sec"><div class="cmtx"><div class="why">다시 정리 실패: ${esc(String(it.aiError).split('\n')[0])}</div></div></div>`;
@@ -51,7 +51,7 @@ function renderAi(it) {
   if (sum.length || sugg) {
     const isTop = !places.length && !rec;
     h += `<div class="sec"><div class="sh"><b>${tipsTitle}</b>${isTop ? redo : ''}</div>${isTop ? runinfo : ''}
-      ${isTop ? sum.map((x, i) => sumCard(it, x, i)).join('') : sum.map((x, i) => `<div class="tip3">${srcChip(it, i) || '<b>·</b>'}<span>${rich(x)}</span></div>${attHtml(it, 'summary', i)}`).join('')}
+      ${isTop ? sum.map((x, i) => sumCard(it, x, i)).join('') : sum.map((x, i) => `<div class="tip3">${srcChip(it, i) || '<b>·</b>'}<span>${tipLabel(it, i)}${rich(x)}</span></div>${attHtml(it, 'summary', i)}`).join('')}
       ${suggHtml}</div>`;
   }
   const facts = (ai.facts || []).filter(f => f && f.text);
@@ -120,7 +120,8 @@ function placeRow(it, p, i) {
 function stepRow(it, x, i) {
   const c = (it.captures || []).find(c => c.at && c.at.sec === 'steps' && +c.at.i === i);
   const th = c ? `<button class="th2 s" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><i>${i + 1}</i></button>` : `<div class="th2 s n"><i>${i + 1}</i></div>`;
-  return `<div class="pr st">${th}<div class="pb"><p>${rich(x)}</p></div></div>`;
+  const st = +(((it.ai && it.ai.recipe && it.ai.recipe.stepT) || [])[i]);
+  return `<div class="pr st">${th}<div class="pb"><p>${st >= 0 ? `<button class="tm" data-seek="${st}">${fmtT(st)}</button> ` : ''}${rich(x)}</p></div></div>`;
 }
 const plain = s => String(s || '').replace(/\[\[(.+?)\]\]/g, '$1');
 /** 요약 한 줄 = 카드 (붙은 첫 사진은 크게, 나머지는 작게) */
@@ -128,14 +129,14 @@ function sumCard(it, x, i) {
   const cs = (it.captures || []).filter(c => c.at && c.at.sec === 'summary' && +c.at.i === i);
   const big = cs[0], rest = cs.slice(1);
   return `<div class="scard">${big ? `<button class="sbig" data-cap="${esc(big.id)}"><img src="${fileUrl(it.id, big.file)}" alt=""><span class="tc">${fmtT(big.t)}</span>${big.ai ? '<span class="aib">AI</span>' : ''}</button>` : ''}
-    <div class="stx">${srcChip(it, i)}${rich(x)}</div>${rest.length ? `<div class="att in">${rest.map(c => `<button class="shot" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}</button>`).join('')}</div>` : ''}</div>`;
+    <div class="stx">${srcChip(it, i)}${tipLabel(it, i)}${rich(x)}</div>${rest.length ? `<div class="att in">${rest.map(c => `<button class="shot" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}</button>`).join('')}</div>` : ''}</div>`;
 }
 
 // ── AI 가 쓰는 중: 설명 → 받아쓰기 → 중요한 줄 → 요약 카드 (주르륵) ──
 let live = null;
 function sliceKey(txt, key) {
   const i = txt.indexOf('"' + key + '"'); if (i < 0) return null;
-  const keys = ['transcript', 'listName', 'area', 'places', 'facts', 'summary', 'course', 'tips', 'keyshots', 'recipe', 'checklist', 'tags', 'folder', 'kind', 'category', 'star'];
+  const keys = ['transcript', 'listName', 'area', 'events', 'star', 'category', 'places', 'facts', 'summary', 'course', 'tips', 'keyshots', 'recipe', 'checklist', 'tags', 'folder', 'kind', 'category', 'star'];
   let end = txt.length;
   keys.forEach(k => { if (k === key) return; const j = txt.indexOf('"' + k + '"', i + 1); if (j > i && j < end) end = j; });
   return txt.slice(i, end);
@@ -313,7 +314,12 @@ function routeHtml(it, places) {
   return `<div class="route">${ls.map(([a, b, u]) => `<button class="chip dark" data-route="${esc(u)}"><svg class="ic" viewBox="0 0 24 24"><path d="M6 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM6 15V9a3 3 0 0 1 3-3h7M18 9v6a3 3 0 0 1-3 3H8"/></svg>경로 보기${ls.length > 1 ? ' ' + a + '–' + b : ''}</button>`).join('')}</div>`;
 }
 /** 요약 줄 출처 (영상 · 본문 · 댓글 · 작성자 댓글 · 사진) */
-const srcChip = (it, i) => { const f = ((it.ai && it.ai.sumFrom) || [])[i]; return f ? `<span class="k">${esc(f)}</span>` : ''; };
+const srcChip = (it, i) => {
+  const ai = it.ai || {}, f = (ai.sumFrom || [])[i], m = (ai.sumMeta || [])[i], lb = (ai.sumLabel || [])[i];
+  const chip = !f ? '' : m && m.from === 'video' && +m.t >= 0 ? `<button class="k" data-seek="${+m.t}">${esc(f)} ${fmtT(m.t)}</button>` : `<span class="k">${esc(f)}</span>`;
+  return chip;
+};
+const tipLabel = (it, i) => { const lb = ((it.ai && it.ai.sumLabel) || [])[i]; return lb ? `<b class="lb">${esc(lb)}</b> ` : ''; };
 /** AI 가 걸린 시간 · 모델 · 기록 (원본 탭 맨 위) */
 function runInfoHtml(it) {
   const ai = it.ai; if (!ai || !ai.log) return '';

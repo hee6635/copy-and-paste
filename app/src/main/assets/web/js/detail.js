@@ -213,8 +213,8 @@ document.addEventListener('click', e => {
   if (e.target.closest('[data-igphotos]') && cur) { const it = byId(cur); it.photoBusy = true; renderMedia(it); A.igPhotos && A.igPhotos(cur); }
 });
 
-/** 쓸모없어 보이는 댓글: 정보 ★ · 작성자 답글이 없고, @태그 · 이모지 · ㅋㅋ 빼면 8자도 안 됨 */
+/** 쓸모없어 보이는 댓글: 정보 ★ · 작성자 답글이 없고, @태그 · 이모지 · ㅋㅋ 빼면 6자도 안 됨 (GeminiPrompt.kt 의 junkComment 와 같게) */
 function cmtJunk(c) {
   if ((c.r || []).some(r => r.own)) return false;
-  return String(c.t || '').replace(/@\S+/g, '').replace(/[\p{Extended_Pictographic}\s!?.,~ㅋㅎㅠㅜ♡❤️]/gu, '').length < 8;
+  return String(c.t || '').replace(/@\S+/g, '').replace(/[\p{Extended_Pictographic}\s!?.,~ㅋㅎㅠㅜ♡❤️]/gu, '').length < 6;
 }

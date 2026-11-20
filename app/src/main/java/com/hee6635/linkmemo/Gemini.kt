@@ -365,14 +365,14 @@ object Gemini {
         val raw = out.trim().removePrefix("```json").removeSuffix("```").trim()
         val finish = cand.optString("finishReason")
         val parsed = try { JSONObject(raw) } catch (_: Exception) {
-            // 끊긴 답: 닫아서 살리기. 요약 · 장소 둘 다 없으면 못 쓴 것으로
+            // 끊긴 답: 닫아서 살리기. 팁 · 장소 · 레시피 다 없으면 못 쓴 것으로
             val fixed = JsonFix.repair(raw)
-            if (fixed == null || (fixed.optJSONArray("summary")?.length() ?: 0) == 0 && (fixed.optJSONArray("places")?.length() ?: 0) == 0)
+            if (fixed == null || (fixed.optJSONArray("tips")?.length() ?: 0) == 0 && (fixed.optJSONArray("places")?.length() ?: 0) == 0 && fixed.optJSONObject("recipe") == null)
                 throw CutErr("답이 ${raw.length}자에서 끊겼어요 · " + JsonFix.reason(finish))
             log.add("끊긴 답 살림", 0, "${raw.length}자 · " + JsonFix.reason(finish), false)
             fixed.put("cut", JsonFix.reason(finish))
         }
-        return parsed
+        return normalize(parsed)
             .put("at", System.currentTimeMillis()).put("video", withVideo).put("model", used)
             .put("modelVersion", res.optString("modelVersion")).put("log", log.json(usage).put("modelVersion", res.optString("modelVersion")))
     }
