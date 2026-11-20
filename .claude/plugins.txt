@@ -1,3 +1,4 @@
 # 새 세션마다 자동 설치할 플러그인 (한 줄에: 마켓 저장소 플러그인@마켓)
 DietrichGebert/ponytail ponytail@ponytail
 bradautomates/claude-video watch@claude-video
+anthropics/claude-plugins-official hyperframes@claude-plugins-official
