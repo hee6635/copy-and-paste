@@ -179,7 +179,7 @@ function itemText(it) {
   L.push('🔗 ' + it.url);
   if ((it.tags || []).length) L.push(it.tags.map(t => '#' + t).join(' '));
   if (it.memo) L.push('', '── 내 메모 ──', it.memo);
-  if (it.ai && (it.ai.places || []).length) L.push('', '── ' + (it.ai.listName || '장소') + ' ──', ...it.ai.places.map((p, i) => (i + 1) + '. ' + p.name + (+p.t >= 0 ? ' (' + fmtT(p.t) + ')' : '') + ' — ' + plain(p.info) + (p.need === 'must' ? ' [필수]' : p.need === 'skip' ? ' [필요 없음]' : '')));
+  if (it.ai && (it.ai.places || []).length) L.push('', '── ' + (it.ai.listName || '장소') + ' ──', ...it.ai.places.map((p, i) => (i + 1) + '. ' + p.name + (+p.t >= 0 ? ' (' + fmtT(p.t) + ')' : '') + ' — ' + plain(p.info)));
   else if (it.ai && (it.ai.course || []).length) L.push('', '── 코스 ──', it.ai.course.join(' → '));
   if (it.ai && (it.ai.summary || []).length) L.push('', '── 요약 ──', ...it.ai.summary.map(x => '· ' + plain(x)));
   if (it.ai && (it.ai.facts || []).length) L.push('', '── 핵심 정보 ──', ...it.ai.facts.map(x => (+x.t >= 0 ? '[' + fmtT(x.t) + '] ' : '· ') + x.text));

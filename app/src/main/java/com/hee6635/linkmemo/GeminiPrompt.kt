@@ -11,7 +11,7 @@ internal fun Gemini.prompt(item: JSONObject, folders: List<String>, withVideo: B
     sb.append("""너는 사용자가 저장한 SNS 게시물 · 영상 · 웹페이지를 실용 메모로 정리하는 도우미야. 한국어로, 짧고 담백하게.
 
 [절대 규칙]
-1. 사실만 쓰기: 영상(말 · 화면 자막 · 간판 · 가격표) · 설명 · 본문 · 사진 · 댓글에 실제로 나온 내용만 쓰기. 없는 사실을 추측하거나 "구글 평점 기반", "분위기 좋은", "즐거운 여행", "추천하는 리스트입니다" 같은 근거 없는 수식어 · 감상 · 제목 풀어쓰기 절대 금지. (places 의 need 판단만은 상식을 써도 됨)
+1. 사실만 쓰기: 영상(말 · 화면 자막 · 간판 · 가격표) · 설명 · 본문 · 사진 · 댓글에 실제로 나온 내용만 쓰기. 없는 사실을 추측하거나 "구글 평점 기반", "분위기 좋은", "즐거운 여행", "추천하는 리스트입니다" 같은 근거 없는 수식어 · 감상 · 제목 풀어쓰기 절대 금지.
 2. 중복 금지: places.info 나 recipe.steps 에 이미 쓴 메뉴 · 가격 · 조리 과정을 tips 에 되풀이하지 말기.
 3. 숨은 알짜 정보 우선: 영상 말뿐 아니라 화면 자막 · 간판에 짧게 지나가는 할인 · 제휴 · 영업시간 · 예약 조건, 그리고 작성자 답글 속 비교 · 주의사항을 놓치지 말기.
 4. 영상 시각(t): ${if (longVid) "영상 앞 15초 안의 인트로 · 미리보기 · 하이라이트 컷은 쓰지 말고, 실제로 그 장면을 설명하는 본 구간의 시각을 쓰기." else "짧은 영상이라 인트로가 없어요. 그 장면이 처음 나오는 시각을 그대로 쓰기."} 영상 길이를 넘는 시각은 절대 쓰지 말기.
@@ -24,7 +24,7 @@ internal fun Gemini.prompt(item: JSONObject, folders: List<String>, withVideo: B
 - places:
   1) 가게 · 장소 · 숙소가 나오면 나온 순서대로 전부. name 은 정확한 상호명(화면 자막 · 간판 우선), t 는 처음 보이는 시각(초, 영상이 아니면 -1), info 는 핵심 1~2줄(70~90자 안팎). 대표 메뉴 · 가격대(최저~최고) · 영업시간 · 위치/동선 특징 · 추천 대상(아이 동반 · 해장 · 향신료 못 먹는 사람 등) · 대안 정보를 아는 만큼 구체적으로.
   2) "추천 N개" · "○○ 모음" · "TOP 10"처럼 여러 항목을 소개하면 장소가 아니어도 빠짐없이 순서대로 전부. name 은 항목 이름 그대로, info 는 용도 · 특징 한 줄.
-  3) need: must(작성자가 '또간집 · 강추 · 필수'로 직접 강조했거나 가장 핵심인 항목 — 전체 중 최대 2개까지만, 절반 이상에 붙이지 말기), maybe(보통 · 상황 따라), skip(대부분 필요 없음 · 중복 · 오래됨). 애매하면 maybe.
+  3) 작성자가 "또간집 · 강추 · 필수"처럼 직접 강조했으면 info 에 그대로 쓰기 (예: "작성자 또간집 · …"). 판단해서 붙이지는 말기.
   4) 해당 없으면 빈 목록.
 - recipe: kind 가 recipe 일 때만.
   * servings: 몇 인분인지. 라면 · 만두 등 봉지/개수 기준 요리는 1봉지(1개)=1인분으로 계산 (예: 라면 3봉지면 servings=3). 나오지 않으면 짐작, 모르면 1.
@@ -98,7 +98,7 @@ internal fun Gemini.schema(): JSONObject {
         "kind" to en("recipe", "checklist", "general"),
         "area" to str(),
         "listName" to str(),
-        "places" to arr(obj("name" to str(), "t" to num(), "info" to str(), "need" to en("must", "maybe", "skip"), req = listOf("name", "t", "info"))),
+        "places" to arr(obj("name" to str(), "t" to num(), "info" to str(), req = listOf("name", "t", "info"))),
         "recipe" to obj("servings" to JSONObject().put("type", "INTEGER"), "ingredients" to arr(str()), "steps" to arr(obj("text" to str(), "t" to num(), req = listOf("text")))),
         "checklist" to arr(str()),
         "events" to arr(obj("title" to str(), "date" to str(), "time" to str(), "end" to str(), "place" to str(), req = listOf("title", "date"))),
