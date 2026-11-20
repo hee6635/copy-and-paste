@@ -30,6 +30,14 @@ object Ocr {
             }
     }
 
+    /** 사진 한 장의 글자 (일꾼 스레드에서 기다려서 읽음, 실패면 빈칸) */
+    fun textOf(file: File): String = try {
+        val bmp = BitmapFactory.decodeFile(file.absolutePath)
+        if (bmp == null) "" else com.google.android.gms.tasks.Tasks.await(
+            TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build()).process(InputImage.fromBitmap(bmp, 0)),
+            20, java.util.concurrent.TimeUnit.SECONDS).text.trim()
+    } catch (_: Throwable) { "" }
+
     /**
      * Gemini 가 영상을 보는 동안 폰이 먼저 화면 글자 읽기: 2초마다 장면 → 글자 → emit(json)
      * json: {"t":초,"text":"…","p":진행 0~1} / 글자가 없으면 text 없이 진행만 / 끝나면 {"done":true}

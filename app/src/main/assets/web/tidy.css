@@ -64,3 +64,18 @@
 .sec.deep em{font-style:normal;font-size:13px;color:var(--sub);font-variant-numeric:tabular-nums}
 .sec.deep .dot{width:8px;height:8px;border-radius:4px;background:var(--accent);animation:blink 1.2s ease-in-out infinite}
 @keyframes blink{50%{opacity:.25}}
+
+/* 사진 게시물 */
+.photos{margin:0 16px;border-radius:20px;overflow-x:auto;overflow-y:hidden;display:flex;scroll-snap-type:x mandatory;background:#000;scrollbar-width:none}
+.photos::-webkit-scrollbar{display:none}
+.photos img{flex:0 0 100%;width:100%;max-height:62vh;object-fit:contain;scroll-snap-align:center;display:block}
+.pdots{display:flex;justify-content:center;gap:5px;margin:8px 0 0}
+.pdots i{width:6px;height:6px;border-radius:3px;background:var(--fg);opacity:.2;transition:opacity .2s,transform .2s}
+.pdots i.on{opacity:.8;transform:scale(1.25)}
+.sec.getph{display:flex;align-items:center;gap:10px;padding:12px 16px}
+.sec.getph b{flex:1;font-size:14.5px}
+.sec.getph .dot{width:8px;height:8px;border-radius:4px;background:var(--accent);animation:blink 1.2s ease-in-out infinite}
+.phx{display:flex;gap:10px;padding:8px 0}
+.phx+.phx{border-top:1px solid var(--line)}
+.phx b{flex-shrink:0;width:22px;height:22px;border-radius:7px;background:var(--surface);font-size:12px;display:flex;align-items:center;justify-content:center}
+.phx .p{margin:0;white-space:pre-wrap}

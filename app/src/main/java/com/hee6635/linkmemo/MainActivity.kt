@@ -362,6 +362,7 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun setLimit(model: String, n: Int) = Usage.setLimit(ctx, model, n)
         /** 긴 영상도 영상 받기 */
         @JavascriptInterface fun downloadVideo(id: String) = SaveService.start(ctx, id, "video")
+        @JavascriptInterface fun igPhotos(id: String) = SaveService.start(ctx, id, "igPhotos")
         @JavascriptInterface fun backup(withVideo: Boolean) {
             backupVideo = withVideo
             val d = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())

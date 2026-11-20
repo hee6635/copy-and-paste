@@ -70,6 +70,7 @@ class SaveService : Service() {
                 when (action) {
                     "comments" -> try { refetchComments(id) } catch (_: Throwable) {}
                     "video" -> try { downloadLater(id) } catch (_: Throwable) {}
+                    "igPhotos" -> try { igPhotosLater(id) } catch (_: Throwable) {}
                     "ai" -> try { aiInto(id, true) } catch (_: Throwable) {}
                     "aiAuto" -> try { if (id in AiRetry.due(this@SaveService)) aiInto(id, true, auto = true) } catch (_: Throwable) {}
                     else -> {
@@ -120,7 +121,7 @@ class SaveService : Service() {
 
     internal fun emit(o: JSONObject?) { if (o != null) Events.item(o) }
 
-    private fun stage(id: String, text: String, progress: Int? = null) {
+    internal fun stage(id: String, text: String, progress: Int? = null) {
         emit(Store.patch(this, id) {
             it.put("status", "saving"); it.put("stage", text)
             if (progress != null) it.put("progress", progress)
@@ -155,11 +156,14 @@ class SaveService : Service() {
             "youtube" -> saveWithYtdlp(id, url, withVideo)
             else -> {
                 // 인스타: yt-dlp → 안 되면 퍼가기(embed) 페이지 → 그래도 안 되면 두 오류를 같이 남김
+                // 인스타: yt-dlp → 안 되면(사진 게시물 등) 로그인된 인스타 통로(사진 전부 · 캡션) → 그래도 안 되면 퍼가기 페이지
                 try {
                     saveWithYtdlp(id, url, withVideo)
                 } catch (e: Throwable) {
-                    try { saveIgEmbed(id, url, withVideo) } catch (e2: Throwable) {
-                        throw IllegalStateException("[yt-dlp] ${e.message}\n\n[embed] ${e2.message}")
+                    try { saveIgApi(id, url, withVideo) } catch (e1: Throwable) {
+                        try { saveIgEmbed(id, url, withVideo) } catch (e2: Throwable) {
+                            throw IllegalStateException("[yt-dlp] ${e.message}\n\n[인스타] ${e1.message}\n\n[embed] ${e2.message}")
+                        }
                     }
                 }
                 igCommentsInto(id, url)
@@ -254,7 +258,7 @@ class SaveService : Service() {
             it.put("author", e.user)
             it.put("desc", e.caption)
             it.put("comments", JSONArray())
-            if (thumb != null) it.put("thumb", thumb)
+            if (thumb != null) { it.put("thumb", thumb); it.put("photos", JSONArray().put(JSONObject().put("file", thumb).put("text", Ocr.textOf(File(dir, thumb))))) }
             if (videoName != null) { it.put("video", videoName); it.put("videoSize", File(dir, videoName).length()) }
         })
     }
@@ -292,7 +296,8 @@ class SaveService : Service() {
         val infoFile = File(dir, "media.info.json")
         try { YoutubeDL.getInstance().execute(req, "save-$id", false, null) }
         catch (e: Throwable) {
-            if (!infoFile.exists() && platform == "youtube") {
+            if (platform != "youtube") throw e
+            if (!infoFile.exists()) {
                 // 자막 때문에 내용까지 못 받았으면 자막 없이 한 번 더
                 stage(id, "자막 없이 다시 읽는 중", 0)
                 val r2 = YoutubeDLRequest(url)
@@ -302,7 +307,7 @@ class SaveService : Service() {
                 r2.addOption("--socket-timeout", "30")
                 r2.addOption("-o", File(dir, "media.%(ext)s").absolutePath)
                 try { YoutubeDL.getInstance().execute(r2, "save2-$id", false, null) } catch (e2: Throwable) { if (!infoFile.exists()) throw e2 }
-            } else if (!infoFile.exists()) throw e
+            }
         }
         if (!infoFile.exists()) throw IllegalStateException("내용을 읽지 못했어요")
         val info = JSONObject(infoFile.readText())

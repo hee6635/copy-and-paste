@@ -281,6 +281,12 @@ object Gemini {
         item.optString("desc").takeIf { it.isNotBlank() }?.let { sb.append("[설명]\n").append(it.take(6000)).append("\n") }
         item.optString("body").takeIf { it.isNotBlank() }?.let { sb.append("[본문]\n").append(it.take(8000)).append("\n") }
         item.optString("memo").takeIf { it.isNotBlank() }?.let { sb.append("[내 메모] ").append(it).append("\n") }
+        // 사진 게시물(카드뉴스 등): 폰이 읽은 사진 속 글자. 사진 자체도 같이 보냄
+        item.optJSONArray("photos")?.let { ph ->
+            val t = (0 until ph.length()).mapNotNull { i -> ph.optJSONObject(i)?.optString("text")?.takeIf { x -> x.isNotBlank() }?.let { x -> "${i + 1}. " + x.take(1500) } }
+            if (ph.length() > 0) sb.append("[사진] ${ph.length()}장이 같이 와요. 사진 속 정보(카드뉴스 글 · 표 · 가격 · 순서)가 핵심이면 summary · facts · checklist · recipe 에 꼭 담기.\n")
+            if (t.isNotEmpty()) sb.append("[사진 속 글자 (폰이 읽음, 틀릴 수 있음)]\n").append(t.joinToString("\n")).append("\n")
+        }
         val cs = item.optJSONArray("comments")
         if (cs != null && cs.length() > 0) {
             sb.append("[댓글]\n")
@@ -400,6 +406,19 @@ object Gemini {
             parts.put(JSONObject().put("file_data", JSONObject().put("file_uri", ytUrl)))
             log.add("유튜브 링크로 보기", 0, ytUrl, true)
             withVideo = true
+        }
+        // 영상이 없으면 사진(최대 10장)을 같이 보냄
+        if (!withVideo) item.optJSONArray("photos")?.let { ph ->
+            var n = 0
+            for (i in 0 until ph.length()) {
+                if (n >= 10) break
+                val f = File(Store.dir(ctx, item.optString("id")), ph.optJSONObject(i)?.optString("file") ?: continue)
+                if (!f.exists() || f.length() > 4_000_000) continue
+                parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg")
+                    .put("data", android.util.Base64.encodeToString(f.readBytes(), android.util.Base64.NO_WRAP))))
+                n++
+            }
+            if (n > 0) log.add("사진 같이 보내기", 0, "${n}장", true)
         }
         parts.put(JSONObject().put("text", prompt(item, folders, withVideo, noTranscript)))
         val req = JSONObject()

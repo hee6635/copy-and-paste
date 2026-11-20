@@ -104,7 +104,8 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
     }
     // 1단계: 영상을 볼 메모면 먼저 글만으로 빠르게 정리해 바로 보여 줌 (2단계 영상 보기가 실패해도 남음)
     val plat = SaveService.platformOf(item.optString("url"))
-    val videoLikely = item.optString("video").isNotEmpty() || (Gemini.watch(this) && (plat == "youtube" || plat == "instagram"))
+    val hasPhotos = (item.optJSONArray("photos")?.length() ?: 0) > 0
+    val videoLikely = item.optString("video").isNotEmpty() || (!hasPhotos && Gemini.watch(this) && (plat == "youtube" || plat == "instagram"))
     var hasAi = item.optJSONObject("ai") != null
     if (videoLikely && !hasAi) {
         try {
@@ -121,7 +122,7 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
         var temp: File? = null; var yt: String? = null
         val pre = mutableListOf<Triple<String, Long, String>>()
         val url = item.optString("url")
-        if (item.optString("video").isEmpty() && Gemini.watch(this)) when (SaveService.platformOf(url)) {
+        if (item.optString("video").isEmpty() && Gemini.watch(this) && !hasPhotos) when (SaveService.platformOf(url)) {
             "youtube" -> yt = Gemini.ytWatchUrl(url)
             "instagram" -> {
                 emit(Store.patch(this, id) { it.put("aiBusy", "AI 영상 잠깐 받는 중") })
