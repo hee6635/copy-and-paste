@@ -8,7 +8,7 @@ window.App = {
     // 화면에서 쓰는 중인 메모는 덮어쓰지 않음
     if (cur === o.id && document.activeElement && document.activeElement.id === 'dMemo') o.memo = $('#dMemo').value;
     replace(o);
-    if (before && before.status === 'saving' && o.status === 'done') toast('저장했어요');
+    if (before && before.status === 'saving' && o.status === 'done') { toast('저장했어요'); landing[o.id] = Date.now() + 700; }
     renderHome();
     if (cur === o.id && $('#detail').classList.contains('open')) {
       renderCaps(o);
@@ -181,6 +181,7 @@ document.addEventListener('click', e => {
 });
 
 $('#btnSettings').onclick = openSettings;
+$('#btnTidy').onclick = openTidy;
 $('#dgGo').onclick = runDiag;
 $('#dgCopy').onclick = () => { A.copy(diagText()); toast('결과를 복사했어요'); };
 $('#dim').onclick = () => { const top = stack[stack.length - 1]; if (top && top.type === 'sheet') closeSheet(top.id); };

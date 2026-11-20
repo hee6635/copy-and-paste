@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicInteger
 /* AI 정리 (SaveService 가 부름): 폴더 목록 · Gemini 정리 · 폰 글자 먼저 · 자동 캡처 */
 
 /** 폴더 경로 목록 (meta.json) — "여행 › 나트랑" */
-internal fun SaveService.folderPaths(): List<String> = try {
+internal fun android.content.Context.folderPaths(): List<String> = try {
     val fs = JSONObject(Store.meta(this)).optJSONArray("folders") ?: JSONArray()
     val byId = (0 until fs.length()).map { fs.getJSONObject(it) }.associateBy { it.optString("id") }
     byId.values.map { f ->
@@ -41,15 +41,31 @@ internal fun SaveService.folderPaths(): List<String> = try {
     }
 } catch (_: Throwable) { emptyList() }
 
+/** AI 결과를 메모에 넣기: 갈래 · 태그 더하기 · 정보 댓글 ★ · 실패 흔적 지우기 */
+internal fun mergeAi(o: JSONObject, ai: JSONObject) {
+    o.put("ai", ai)
+    ai.optString("category").takeIf { it.isNotEmpty() }?.let { o.put("category", it) }
+    val tags = o.optJSONArray("tags") ?: JSONArray()
+    val have = (0 until tags.length()).map { tags.getString(it) }.toMutableSet()
+    ai.optJSONArray("tags")?.let { t -> for (i in 0 until t.length()) { val v = t.optString(i).removePrefix("#").trim(); if (v.isNotEmpty() && have.add(v) && tags.length() < 8) tags.put(v) } }
+    o.put("tags", tags)
+    val cs = o.optJSONArray("comments"); val star = ai.optJSONArray("star")
+    if (cs != null) {
+        for (i in 0 until cs.length()) cs.optJSONObject(i)?.remove("star")
+        if (star != null) for (i in 0 until star.length()) cs.optJSONObject(star.optInt(i, -1))?.put("star", true)
+    }
+    listOf("aiBusy", "aiBusyAt", "aiError", "aiLog", "aiRetryAt", "aiRetryN").forEach { o.remove(it) }
+}
+
 /** Gemini 정리. 실패해도 저장은 그대로 두고 aiError 만 남김 */
-internal fun SaveService.aiInto(id: String, force: Boolean) {
+internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = false) {
     if (!(if (force) Gemini.key(this).isNotEmpty() else Gemini.on(this))) {
         if (force) emit(Store.patch(this, id) { it.put("aiError", "Gemini API 키가 없어요 (설정에서 넣어 주세요)") })
         return
     }
     val item = Store.get(this, id) ?: return
     Usage.memo(this)
-    emit(Store.patch(this, id) { it.put("aiBusy", "AI 정리 준비 중"); it.put("aiBusyAt", System.currentTimeMillis()); it.remove("aiError"); it.remove("aiLog") })
+    emit(Store.patch(this, id) { it.put("aiBusy", if (auto) "AI 다시 정리 준비 중" else "AI 정리 준비 중"); it.put("aiBusyAt", System.currentTimeMillis()); it.remove("aiError"); it.remove("aiLog"); it.remove("aiRetryAt"); if (!auto) it.remove("aiRetryN"); it.optJSONObject("ai")?.remove("deepError") })
     updateNotif("AI 정리 중")
     // 긴 영상(10분 넘음): 5분씩 목차 → 목차를 글로 붙여 짧게 한 번 더 정리(팁 · 장소 · 태그)
     if (item.optBoolean("long") && SaveService.platformOf(item.optString("url")) == "youtube") {
@@ -74,23 +90,39 @@ internal fun SaveService.aiInto(id: String, force: Boolean) {
                 val have = (0 until tags.length()).map { tags.getString(it) }.toMutableSet()
                 ai.optJSONArray("tags")?.let { t -> for (i in 0 until t.length()) { val v = t.getString(i).removePrefix("#").trim(); if (v.isNotEmpty() && have.add(v) && tags.length() < 8) tags.put(v) } }
                 o.put("tags", tags)
-                o.remove("aiBusy"); o.remove("aiBusyAt"); o.remove("aiError"); o.remove("aiLog")
+                o.remove("aiBusy"); o.remove("aiBusyAt"); o.remove("aiError"); o.remove("aiLog"); o.remove("aiRetryAt"); o.remove("aiRetryN")
             })
         } catch (e: Throwable) {
             emit(Store.patch(this, id) {
                 it.remove("aiBusy"); it.remove("aiBusyAt")
                 it.put("aiError", if (e is Gemini.AiFail) (e.message ?: "") else Gemini.explain(e))
                 if (e is Gemini.AiFail) it.put("aiLog", e.log)
+                AiRetry.plan(this, it, e, it.optString("aiError"))
             })
         }
         return
     }
+    // 1단계: 영상을 볼 메모면 먼저 글만으로 빠르게 정리해 바로 보여 줌 (2단계 영상 보기가 실패해도 남음)
+    val plat = SaveService.platformOf(item.optString("url"))
+    val hasPhotos = (item.optJSONArray("photos")?.length() ?: 0) > 0
+    val videoLikely = item.optString("video").isNotEmpty() || (!hasPhotos && Gemini.watch(this) && (plat == "youtube" || plat == "instagram"))
+    var hasAi = item.optJSONObject("ai") != null
+    if (videoLikely && !hasAi) {
+        try {
+            val a1 = Gemini.organize(this, item, folderPaths(), { st -> emit(Store.patch(this, id) { it.put("aiBusy", "AI 빠르게 $st") }) }, quick = true)
+            a1.put("light", true)
+            emit(Store.patch(this, id) { o -> mergeAi(o, a1); o.put("aiBusy", "AI 영상 자세히 보는 중"); o.put("aiBusyAt", System.currentTimeMillis()) })
+            hasAi = true
+        } catch (e: Throwable) {
+            if (e.message == "중지했어요") { emit(Store.patch(this, id) { it.remove("aiBusy"); it.remove("aiBusyAt") }); return }
+        }
+    }
     try {
-        // 링크만 저장한 것도 영상 보기: 유튜브는 링크 그대로, 인스타는 잠깐 받아서
+        // 2단계 — 링크만 저장한 것도 영상 보기: 유튜브는 링크 그대로, 인스타는 잠깐 받아서
         var temp: File? = null; var yt: String? = null
         val pre = mutableListOf<Triple<String, Long, String>>()
         val url = item.optString("url")
-        if (item.optString("video").isEmpty() && Gemini.watch(this)) when (SaveService.platformOf(url)) {
+        if (item.optString("video").isEmpty() && Gemini.watch(this) && !hasPhotos) when (SaveService.platformOf(url)) {
             "youtube" -> yt = Gemini.ytWatchUrl(url)
             "instagram" -> {
                 emit(Store.patch(this, id) { it.put("aiBusy", "AI 영상 잠깐 받는 중") })
@@ -117,7 +149,7 @@ internal fun SaveService.aiInto(id: String, force: Boolean) {
         val ai = try {
             Gemini.organize(this, item, folderPaths(), { st ->
                 emit(Store.patch(this, id) { it.put("aiBusy", "AI $st") })
-            }, temp, yt, pre) { txt -> stopOcr.set(true); Events.partial(id, txt) }
+            }, temp, yt, pre, fallback = !hasAi) { txt -> stopOcr.set(true); Events.partial(id, txt) }
         } catch (e: Throwable) { stopOcr.set(true); side.join(60000); temp?.delete(); holder[0]?.delete(); throw e }
         stopOcr.set(true)
         side.join(60000)
@@ -154,13 +186,17 @@ internal fun SaveService.aiInto(id: String, force: Boolean) {
                 for (i in 0 until cs.length()) cs.getJSONObject(i).remove("star")
                 if (star != null) for (i in 0 until star.length()) cs.optJSONObject(star.optInt(i, -1))?.put("star", true)
             }
-            o.remove("aiBusy"); o.remove("aiBusyAt"); o.remove("aiError"); o.remove("aiLog")
+            o.remove("aiBusy"); o.remove("aiBusyAt"); o.remove("aiError"); o.remove("aiLog"); o.remove("aiRetryAt"); o.remove("aiRetryN")
         })
     } catch (e: Throwable) {
         emit(Store.patch(this, id) {
             it.remove("aiBusy"); it.remove("aiBusyAt")
-            it.put("aiError", if (e is Gemini.AiFail) (e.message ?: "") else Gemini.explain(e))
-            if (e is Gemini.AiFail) it.put("aiLog", e.log)
+            val msg = if (e is Gemini.AiFail) (e.message ?: "") else Gemini.explain(e)
+            val cur = it.optJSONObject("ai")
+            // 1단계 결과가 있으면 그대로 두고 "영상 자세히 보기"만 실패로 표시
+            if (cur != null && cur.optBoolean("light")) { cur.put("deepError", msg.lineSequence().first()); if (e is Gemini.AiFail) cur.put("deepLog", e.log) }
+            else { it.put("aiError", msg); if (e is Gemini.AiFail) it.put("aiLog", e.log) }
+            AiRetry.plan(this, it, e, msg)
         })
     }
 }

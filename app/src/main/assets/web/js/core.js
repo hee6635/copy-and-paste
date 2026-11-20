@@ -41,6 +41,7 @@ function closePage(id) {
   if (stack.filter(s => s.type === 'page').length === 0) $('#home').classList.remove('behind');
   if (id === 'detail') { const v = $('#dScroll video'); if (v) v.pause(); setTimeout(() => { if (!$('#detail').classList.contains('open')) { $('#dScroll').innerHTML = ''; cur = null; } }, 400); }
   if (id === 'capView') curCap = null;
+  if (id === 'tidy') tidyClosed();
 }
 function openSheet(id) {
   $('#' + id).classList.add('open'); $('#' + id).setAttribute('aria-hidden', 'false');

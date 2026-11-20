@@ -48,6 +48,7 @@
         <activity android:name=".LoginActivity" android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
+        <receiver android:name=".RetryReceiver" android:exported="false" />
         <service
             android:name=".SaveService"
             android:exported="false"

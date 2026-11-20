@@ -1,0 +1,81 @@
+/* 한 장씩 정리 */
+#tidy .top .t{font-variant-numeric:tabular-nums}
+#tdUndo{transition:opacity .2s}
+#tdUndo.off{opacity:.25;pointer-events:none}
+.tbar{margin:0 20px;height:5px;border-radius:3px;background:var(--line);overflow:hidden;flex-shrink:0}
+.tbar i{display:block;height:5px;background:var(--accent);border-radius:3px;transform-origin:left;transform:scaleX(0);transition:transform .4s var(--ease)}
+.tstack{position:relative;flex:1;margin:16px 20px 0;min-height:0}
+.tcard{position:absolute;left:0;right:0;top:0;max-height:100%;overflow:hidden;background:var(--bg);border-radius:22px;box-shadow:0 6px 24px rgba(0,0,0,.06);touch-action:pan-y;-webkit-user-select:none;user-select:none;will-change:transform}
+.tcard.back{transform:scale(.94) translateY(22px);opacity:.6;transition:transform .32s var(--ease),opacity .32s}
+.tcard.back.up{transform:none;opacity:1}
+.tth{position:relative;height:200px;background:#2b2f36}
+.tth img{display:block;width:100%;height:100%;object-fit:cover;pointer-events:none}
+.tth .badge{position:absolute;right:10px;bottom:10px}
+.tsrc{position:absolute;left:10px;top:10px;background:rgba(255,255,255,.92);color:#4e5968;font-size:12px;font-weight:700;padding:4px 8px;border-radius:8px}
+.tcb{padding:16px 18px 18px}
+.tcb h3{margin:0;font-size:18px;font-weight:800;letter-spacing:-.3px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tmeta{font-size:13px;color:var(--muted);margin-top:6px}
+.tsum{margin:12px 0 0;padding:0;list-style:none;font-size:14.5px;line-height:1.6;color:var(--sub)}
+.tsum li{padding-left:12px;position:relative}
+.tsum li:before{content:'·';position:absolute;left:0;font-weight:800}
+.tmemo{margin-top:10px;font-size:14px;color:var(--fg);background:var(--surface);border-radius:10px;padding:8px 10px}
+.tai{margin-top:12px;padding:12px;border-radius:16px;background:var(--surface)}
+.tah{font-size:13px;font-weight:700;color:var(--sub);display:flex;justify-content:space-between;align-items:center}
+.tah span{font-size:12px;background:var(--bg);padding:2px 7px;border-radius:7px;color:var(--muted)}
+.tchips{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
+.tchip{height:38px;padding:0 14px;border-radius:19px;background:var(--bg);border:1px solid var(--pillline);font-size:14px;font-weight:600;color:var(--sub);transition:border-color .2s,color .2s}
+.tchip.on{border:1.5px solid var(--accent);color:var(--acc-ink);font-weight:800}
+.tstamp{position:absolute;top:20px;z-index:2;font-weight:800;font-size:20px;padding:4px 12px;border-radius:12px;border:3px solid;background:rgba(255,255,255,.92);opacity:0;pointer-events:none}
+.tstamp.del{right:18px;color:var(--danger);transform:rotate(12deg)}
+.tstamp.ok{left:18px;color:#191f28;transform:rotate(-12deg)}
+.tbtns{display:flex;gap:8px;padding:14px 20px calc(18px + var(--sb));flex-shrink:0}
+.tb{flex:1;height:56px;border-radius:16px;font-size:16px;font-weight:700;background:var(--bg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 12px;transition:transform .15s}
+.tb:active{transform:scale(.97)}
+.tb.del{color:var(--danger)}
+.tb.go{flex:2;background:var(--accent);color:var(--on-accent)}
+.tdone{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--sub);font-size:14.5px;animation:pop .35s var(--ease)}
+.tdone b{font-size:20px;color:var(--fg)}
+.tdone .chip{margin-top:8px}
+
+/* 막 저장된 카드 내려앉기 · 스프링 */
+.card.land{animation:land .62s var(--spring)}
+@keyframes land{from{transform:translateY(-36px) scale(.92);opacity:0}to{transform:none;opacity:1}}
+.tcard.back{transition:transform .45s var(--spring),opacity .32s}
+
+/* 인분 조절 · 일정 */
+.shr{display:flex;align-items:center;gap:8px}
+.srv{display:flex;align-items:center;height:32px;border-radius:16px;background:var(--surface)}
+.srv button{width:32px;height:32px;font-size:17px;font-weight:700;color:var(--fg);transition:transform .2s var(--spring)}
+.srv button:active{transform:scale(.85)}
+.srv button[disabled]{opacity:.3}
+.srv b{min-width:44px;text-align:center;font-size:13.5px;font-variant-numeric:tabular-nums}
+.evr{display:flex;align-items:center;gap:12px;padding:8px 0}
+.evr+.evr{border-top:1px solid var(--line)}
+.evd{width:46px;height:46px;border-radius:12px;background:var(--surface);display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0}
+.evd b{font-size:15px;line-height:1.1}
+.evd span{font-size:11.5px;color:var(--sub)}
+.evb{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.evb b{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.evb span{font-size:13px;color:var(--sub)}
+
+/* AI 2단계: 영상 자세히 보는 중 */
+.sec.deep{display:flex;align-items:center;gap:10px;padding:12px 16px}
+.sec.deep b{flex:1;font-size:14.5px}
+.sec.deep em{font-style:normal;font-size:13px;color:var(--sub);font-variant-numeric:tabular-nums}
+.sec.deep .dot{width:8px;height:8px;border-radius:4px;background:var(--accent);animation:blink 1.2s ease-in-out infinite}
+@keyframes blink{50%{opacity:.25}}
+
+/* 사진 게시물 */
+.photos{margin:0 16px;border-radius:20px;overflow-x:auto;overflow-y:hidden;display:flex;scroll-snap-type:x mandatory;background:#000;scrollbar-width:none}
+.photos::-webkit-scrollbar{display:none}
+.photos img{flex:0 0 100%;width:100%;max-height:62vh;object-fit:contain;scroll-snap-align:center;display:block}
+.pdots{display:flex;justify-content:center;gap:5px;margin:8px 0 0}
+.pdots i{width:6px;height:6px;border-radius:3px;background:var(--fg);opacity:.2;transition:opacity .2s,transform .2s}
+.pdots i.on{opacity:.8;transform:scale(1.25)}
+.sec.getph{display:flex;align-items:center;gap:10px;padding:12px 16px}
+.sec.getph b{flex:1;font-size:14.5px}
+.sec.getph .dot{width:8px;height:8px;border-radius:4px;background:var(--accent);animation:blink 1.2s ease-in-out infinite}
+.phx{display:flex;gap:10px;padding:8px 0}
+.phx+.phx{border-top:1px solid var(--line)}
+.phx b{flex-shrink:0;width:22px;height:22px;border-radius:7px;background:var(--surface);font-size:12px;display:flex;align-items:center;justify-content:center}
+.phx .p{margin:0;white-space:pre-wrap}

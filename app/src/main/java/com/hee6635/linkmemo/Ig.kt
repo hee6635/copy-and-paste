@@ -100,6 +100,28 @@ object Ig {
         throw IllegalStateException(why.toString())
     }
 
+    class Media(val user: String, val caption: String, val images: List<String>, val video: String?)
+
+    /** 로그인된 인스타 통로로 게시물 정보: 작성자 · 캡션 · 사진 전부(여러 장 게시물 포함, 최대 20) · 영상 주소 */
+    fun media(ctx: Context, url: String): Media {
+        if (!loggedIn()) throw IllegalStateException("인스타 로그인이 안 되어 있어요")
+        val code = code(url) ?: throw IllegalStateException("링크에서 게시물 번호를 찾지 못했어요")
+        val j = apiGet(ctx, "https://www.instagram.com/api/v1/media/${mediaId(code)}/info/")
+        val m0 = j.optJSONArray("items")?.optJSONObject(0) ?: throw IllegalStateException("게시물 정보가 비어 있어요")
+        fun best(o: JSONObject): String? = o.optJSONObject("image_versions2")?.optJSONArray("candidates")?.optJSONObject(0)?.optString("url")?.takeIf { u -> u.isNotEmpty() }
+        val imgs = mutableListOf<String>()
+        var video: String? = null
+        val car = m0.optJSONArray("carousel_media")
+        if (car != null) {
+            for (i in 0 until car.length()) { val m = car.optJSONObject(i) ?: continue; if (m.optInt("media_type") == 1) best(m)?.let { u -> imgs.add(u) } }
+        } else if (m0.optInt("media_type") == 2) {
+            video = m0.optJSONArray("video_versions")?.optJSONObject(0)?.optString("url")?.takeIf { u -> u.isNotEmpty() }
+        } else best(m0)?.let { u -> imgs.add(u) }
+        val user = m0.optJSONObject("user")?.optString("username") ?: ""
+        val caption = m0.optJSONObject("caption")?.optString("text") ?: ""
+        return Media(user, caption, imgs.take(20), video)
+    }
+
     /** 좋아요순 20개 + 작성자 답글. 로그인 안 되어 있으면 이유를 던짐 */
     fun comments(ctx: Context, url: String, ownerHint: String): JSONArray {
         if (!loggedIn()) throw IllegalStateException("인스타 로그인이 안 되어 있어요")

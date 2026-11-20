@@ -13,16 +13,14 @@ function renderDetail(full) {
   const it = byId(cur); if (!it) return;
   $('#dTopTitle').textContent = '';
   const sc = $('#dScroll');
-  if (full || !sc.querySelector('.video, .meta')) {
+  if (full || !sc.querySelector('.meta')) {
     let media = '';
     if (it.video) {
       media = `<div class="video"><video id="dVideo" src="${fileUrl(it.id, it.video)}" ${it.thumb ? `poster="${fileUrl(it.id, it.thumb)}"` : ''} controls playsinline preload="metadata"></video>
         <button class="capbtn" id="dCap"><svg class="ic" viewBox="0 0 24 24"><path d="M4 8a1 1 0 0 1 1-1h2.5l1.5-2h6l1.5 2H19a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>캡처</button><div class="flash" id="dFlash"></div></div>`;
-    } else if (it.thumb) {
-      media = `<div class="video"><img src="${fileUrl(it.id, it.thumb)}" alt=""></div>`;
     }
     accOpen = {};
-    sc.innerHTML = media + `<div class="meta"></div><div id="dAi"></div><div id="dTips"></div><div id="dCaps"></div>
+    sc.innerHTML = (media || '<div id="dMedia"></div>') + `<div class="meta"></div><div id="dAi"></div><div id="dTips"></div><div id="dCaps"></div>
       <button class="acc" data-acc="more">받아쓰기 · 설명 · 댓글 <span><svg class="ic" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></span></button>
       <div class="accb"><div id="dTabs"></div><div id="dBody"></div></div>
       <div class="sec"><label class="memo"><small>내 메모</small><textarea id="dMemo" rows="2"></textarea></label></div>`;
@@ -35,6 +33,7 @@ function renderDetail(full) {
     <button class="fchip" id="dCat">${esc(it.category ? catLabel(it.category) : '키워드 없음')}<svg class="ic chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
     <div class="tags">${(it.tags || []).map(t => `<button class="tg" data-tag="${esc(t)}">#${esc(t)}</button>`).join('')}
     <button class="add" id="dAddTag" aria-label="태그 추가"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>`;
+  if (!it.video) renderMedia(it);
   renderAi(it);
   renderTips(it);
   renderCaps(it);
@@ -60,7 +59,7 @@ function renderTips(it) {
   const tips = (it.ai && it.ai.tips) || [];
   if (!tips.length) { el.innerHTML = ''; return; }
   const src = t => t.from === 'video' && +t.t >= 0 ? `<button data-seek="${+t.t}">영상 ${fmtT(t.t)}</button>` : t.from === 'video' ? '영상' : t.from === 'author' ? '작성자 답글' : t.from === 'body' || /^author$/i.test(t.who || '') ? '본문' : t.who ? '@' + esc(String(t.who).replace(/^@/, '')) : '댓글';
-  el.innerHTML = accHead('tips', it.ai.video ? '영상 · 댓글 꿀팁' : '꿀팁', tips.length) + `<div class="accb"><div class="sec">
+  el.innerHTML = accHead('tips', (it.photos || []).length && !it.video ? '사진 · 댓글 꿀팁' : it.ai.video ? '영상 · 댓글 꿀팁' : '꿀팁', tips.length) + `<div class="accb"><div class="sec">
     ${tips.map((t, i) => `<div class="tip"><span class="n">${i + 1}</span><div><p>${esc(t.text)}</p><small>${src(t)}</small></div></div>`).join('')}</div></div>`;
 }
 
@@ -78,7 +77,7 @@ function renderCaps(it) {
 function renderTabs(it) {
   const tabs = it.platform === 'web'
     ? [['body', '본문']]
-    : [['desc', '설명']].concat((it.ai && (it.ai.transcript || []).length) ? [['ts', '받아쓰기']] : [], [['cmt', '댓글 ' + (it.comments || []).length]]);
+    : [['desc', '설명']].concat((it.ai && (it.ai.transcript || []).length) ? [['ts', '받아쓰기']] : [], (it.photos || []).some(p => p.text) ? [['ph', '사진 글자']] : [], [['cmt', '댓글 ' + (it.comments || []).length]]);
   if (!tabs.some(t => t[0] === curTab)) curTab = tabs[0][0];
   const idx = tabs.findIndex(t => t[0] === curTab);
   $('#dTabs').innerHTML = tabs.length < 2 ? '' : `<div class="tabs"><i style="width:calc((100% - 6px) / ${tabs.length});transform:translateX(${idx * 100}%)"></i>
@@ -87,6 +86,8 @@ function renderTabs(it) {
   if (curTab === 'desc') {
     const dk = it.ai && it.ai.desc_ko;
     body = it.desc ? (dk ? `<div class="kobox"><small>번역</small><p class="p">${esc(dk)}</p></div><details class="orig"><summary>원문 보기</summary>${longText(it.desc)}</details>` : longText(it.desc)) : '<div class="none">설명이 없어요</div>';
+  } else if (curTab === 'ph') {
+    body = it.photos.map((p, i) => p.text ? `<div class="phx"><b>${i + 1}</b><p class="p">${esc(p.text)}</p></div>` : '').join('');
   } else if (curTab === 'ts') {
     body = it.ai.transcript.map(x => `<button class="ts" data-seek="${+x.t || 0}"><b>${fmtT(x.t)}</b><span>${esc(x.text)}${x.ko ? `<em class="ko">${esc(x.ko)}</em>` : ''}</span></button>`).join('');
   } else if (curTab === 'body') {
@@ -141,3 +142,29 @@ function itemText(it) {
   if (cs.length) { L.push('', '── 댓글 ──'); cs.forEach((c, i) => { L.push((i + 1) + '. @' + c.a + ' (♡' + (c.l || 0) + ') ' + c.t); (c.r || []).forEach(r => L.push('   ↳ @' + r.a + (r.own ? ' [작성자]' : '') + ' ' + r.t)); }); }
   return L.join('\n');
 }
+
+// ── 영상이 없는 메모의 위쪽: 사진 넘겨 보기 · 대표 그림 · (인스타) 사진 가져오기 ──
+function renderMedia(it) {
+  const el = $('#dMedia'); if (!el) return;
+  const ph = it.photos || [];
+  const key = [it.id, ph.length, it.thumb, it.photoBusy, it.photoError].join('|');
+  if (el.dataset.k === key) return;
+  el.dataset.k = key;
+  let h = '';
+  if (ph.length) {
+    h = `<div class="photos" id="dPhotos">${ph.map(p => `<img src="${fileUrl(it.id, p.file)}" alt="" loading="lazy">`).join('')}</div>` +
+      (ph.length > 1 ? `<div class="pdots">${ph.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : '');
+  } else if (it.thumb) h = `<div class="video"><img src="${fileUrl(it.id, it.thumb)}" alt=""></div>`;
+  if (!ph.length || ph.length === 1 && it.thumb === 'thumb.jpg') {
+    if (it.platform === 'instagram' && !it.video) h += `<div class="sec getph">${it.photoBusy ? '<span class="dot"></span><b>사진 가져오는 중</b>' : `<b>${it.photoError ? '사진을 못 가져왔어요' : '사진을 전부 가져올까요'}</b><button class="chip dark" data-igphotos>사진 가져오기</button>`}</div>`;
+  }
+  el.innerHTML = h;
+  const g = $('#dPhotos');
+  if (g && ph.length > 1) g.addEventListener('scroll', () => {
+    const i = Math.round(g.scrollLeft / g.clientWidth);
+    el.querySelectorAll('.pdots i').forEach((d, k) => d.classList.toggle('on', k === i));
+  }, { passive: true });
+}
+document.addEventListener('click', e => {
+  if (e.target.closest('[data-igphotos]') && cur) { const it = byId(cur); it.photoBusy = true; renderMedia(it); A.igPhotos && A.igPhotos(cur); }
+});

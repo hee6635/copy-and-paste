@@ -52,6 +52,19 @@ object Gemini {
     @Volatile var lastErrRaw = ""
     /** 실패해도 기록(log)은 남김 */
     class AiFail(msg: String, val log: JSONObject) : IllegalStateException(msg)
+    /** 키 문제 (다시 해도 안 됨) */
+    class KeyBad(msg: String) : IllegalStateException(msg)
+    /** 답이 중간에 끊겨 못 살림 */
+    class CutErr(msg: String) : IllegalStateException(msg)
+    /** 1초씩 쉬며 중지 확인 */
+    private fun nap(ms: Long) { var left = ms; while (left > 0) { checkCancel(); Thread.sleep(minOf(1000L, left)); left -= 1000 } }
+    /** 429 본문: 하루 한도가 아니고 구글이 60초 이하로 기다리라고 하면 그 시간(ms), 아니면 0 */
+    fun retryWait(raw: String): Long {
+        val low = raw.lowercase()
+        if ("perday" in low || "per_day" in low) return 0
+        val sec = Regex("\"retryDelay\"\\s*:\\s*\"([0-9.]+)s\"").find(raw)?.groupValues?.get(1)?.toDoubleOrNull() ?: return 0
+        return if (sec <= 60) (sec * 1000).toLong() + 1000 else 0
+    }
 
     fun label(m: String) = when (m) { "gemini-flash-latest" -> "최신 flash"; "gemini-flash-lite-latest" -> "flash-lite"; else -> m.removePrefix("gemini-") }
 
@@ -253,24 +266,49 @@ object Gemini {
      * tempVideo: 링크만 저장한 인스타 영상을 잠깐 받은 파일 · ytUrl: 유튜브 링크(받지 않고 그대로 넘김)
      * pre: 정리 전에 한 일(영상 잠깐 받기 등) 기록
      */
+    /**
+     * quick: 글만 빠르게 (1단계) · fallback: 영상으로 실패하면 글만으로 한 번 더 (2단계에서는 1단계 결과가 있으니 끔)
+     * 답이 끊기면(저작권 차단 등) 먼저 받아쓰기 빼고 영상으로 한 번 더.
+     */
     fun organize(ctx: Context, item: JSONObject, folders: List<String>, onStage: (String) -> Unit,
                  tempVideo: File? = null, ytUrl: String? = null, pre: List<Triple<String, Long, String>> = emptyList(),
+                 quick: Boolean = false, fallback: Boolean = true,
                  onPartial: ((String) -> Unit)? = null): JSONObject {
         val key = key(ctx)
         if (key.isEmpty()) throw IllegalStateException("Gemini API 키가 없어요 (설정에서 넣어 주세요)")
         cancelled = false
         val log = RunLog(ctx)
         pre.forEach { (step, ms, note) -> log.add(step, ms, note, !note.startsWith("실패")) }
+        if (quick) return try { organizeImpl(ctx, key, item, folders, onStage, log, null, null, onPartial, noVideo = true) }
+            catch (e: Throwable) { throw AiFail(if (cancelled) "중지했어요" else explain(e), log.json(null)) }
+        val hasSaved = item.optString("video").isNotEmpty()
+        val video = tempVideo != null || ytUrl != null || hasSaved
         return try { organizeImpl(ctx, key, item, folders, onStage, log, tempVideo, ytUrl, onPartial) }
-        catch (e: Throwable) { throw AiFail(if (cancelled) "중지했어요" else explain(e), log.json(null)) }
+        catch (e0: Throwable) {
+            var e = e0
+            if (cancelled) throw AiFail("중지했어요", log.json(null))
+            // 답이 끊겼으면 → 받아쓰기 빼고 영상으로 한 번 더
+            if (e is CutErr && video) {
+                log.add("받아쓰기 빼고 다시", 0, e.message ?: "", false)
+                onStage("받아쓰기 빼고 다시 정리 중")
+                try { return organizeImpl(ctx, key, item, folders, onStage, log, tempVideo, ytUrl, onPartial, noTranscript = true) }
+                catch (e2: Throwable) { if (cancelled) throw AiFail("중지했어요", log.json(null)); e = e2 }
+            }
+            // 영상으로 하다 실패하면 → 글(제목 · 설명 · 댓글)만으로 한 번 더. 키 문제면 그대로 멈춤
+            if (e is KeyBad || !video || !fallback) throw AiFail(explain(e), log.json(null))
+            log.add("영상 없이 다시", 0, "영상으로 실패: " + explain(e).lineSequence().first().substringBefore(" →"), false)
+            onStage("영상 없이 글만으로 다시 정리 중")
+            try { organizeImpl(ctx, key, item, folders, onStage, log, null, null, onPartial, noVideo = true).put("noVideo", true) }
+            catch (e2: Throwable) { throw AiFail(if (cancelled) "중지했어요" else explain(e2), log.json(null)) }
+        }
     }
 
     private fun organizeImpl(ctx: Context, key: String, item: JSONObject, folders: List<String>, onStage: (String) -> Unit, log: RunLog,
-                             tempVideo: File?, ytUrl: String?, onPartial: ((String) -> Unit)?): JSONObject {
+                             tempVideo: File?, ytUrl: String?, onPartial: ((String) -> Unit)?, noVideo: Boolean = false, noTranscript: Boolean = false): JSONObject {
         val parts = JSONArray()
         val vName = item.optString("video")
-        val saved = if (vName.isNotEmpty()) File(Store.dir(ctx, item.optString("id")), vName) else null
-        val vFile = (saved?.takeIf { it.exists() } ?: tempVideo?.takeIf { it.exists() })?.takeIf { it.length() < 1_900_000_000L }
+        val saved = if (vName.isNotEmpty() && !noVideo) File(Store.dir(ctx, item.optString("id")), vName) else null
+        val vFile = (saved?.takeIf { it.exists() } ?: tempVideo?.takeIf { !noVideo && it.exists() })?.takeIf { it.length() < 1_900_000_000L }
         var withVideo = false
         if (vFile != null) {
             onStage("영상 올리는 중")
@@ -278,13 +316,26 @@ object Gemini {
             val uri = upload(ctx, key, vFile, mime, log)
             parts.put(JSONObject().put("file_data", JSONObject().put("mime_type", mime).put("file_uri", uri)))
             withVideo = true
-        } else if (ytUrl != null) {
+        } else if (ytUrl != null && !noVideo) {
             // 유튜브는 받지 않고 링크를 그대로 넘김 (공개 영상만)
             parts.put(JSONObject().put("file_data", JSONObject().put("file_uri", ytUrl)))
             log.add("유튜브 링크로 보기", 0, ytUrl, true)
             withVideo = true
         }
-        parts.put(JSONObject().put("text", prompt(item, folders, withVideo)))
+        // 영상이 없으면 사진(최대 10장)을 같이 보냄
+        if (!withVideo) item.optJSONArray("photos")?.let { ph ->
+            var n = 0
+            for (i in 0 until ph.length()) {
+                if (n >= 10) break
+                val f = File(Store.dir(ctx, item.optString("id")), ph.optJSONObject(i)?.optString("file") ?: continue)
+                if (!f.exists() || f.length() > 4_000_000) continue
+                parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg")
+                    .put("data", android.util.Base64.encodeToString(f.readBytes(), android.util.Base64.NO_WRAP))))
+                n++
+            }
+            if (n > 0) log.add("사진 같이 보내기", 0, "${n}장", true)
+        }
+        parts.put(JSONObject().put("text", prompt(item, folders, withVideo, noTranscript)))
         val req = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", parts)))
             .put("generationConfig", JSONObject()
@@ -311,7 +362,17 @@ object Gemini {
             ?: throw IllegalStateException("Gemini 가 답을 주지 않았어요: " + (res.optJSONObject("promptFeedback")?.toString() ?: text.take(200)))
         val out = cand.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")
             ?: throw IllegalStateException("답이 비어 있어요 (${cand.optString("finishReason")})")
-        return JSONObject(out.trim().removePrefix("```json").removeSuffix("```").trim())
+        val raw = out.trim().removePrefix("```json").removeSuffix("```").trim()
+        val finish = cand.optString("finishReason")
+        val parsed = try { JSONObject(raw) } catch (_: Exception) {
+            // 끊긴 답: 닫아서 살리기. 요약 · 장소 둘 다 없으면 못 쓴 것으로
+            val fixed = JsonFix.repair(raw)
+            if (fixed == null || (fixed.optJSONArray("summary")?.length() ?: 0) == 0 && (fixed.optJSONArray("places")?.length() ?: 0) == 0)
+                throw CutErr("답이 ${raw.length}자에서 끊겼어요 · " + JsonFix.reason(finish))
+            log.add("끊긴 답 살림", 0, "${raw.length}자 · " + JsonFix.reason(finish), false)
+            fixed.put("cut", JsonFix.reason(finish))
+        }
+        return parsed
             .put("at", System.currentTimeMillis()).put("video", withVideo).put("model", used)
             .put("modelVersion", res.optString("modelVersion")).put("log", log.json(usage).put("modelVersion", res.optString("modelVersion")))
     }
@@ -384,7 +445,7 @@ object Gemini {
     internal fun generate(ctx: Context, key: String, req: JSONObject, onStage: (String) -> Unit, log: RunLog, withVideo: Boolean,
                          onPartial: ((String) -> Unit)? = null): Pair<String, String> {
         val tried = StringBuilder()
-        val limit = if (withVideo) 120000 else 40000
+        val limit = if (withVideo) 120000 else 60000
         val models = order(ctx)
         for ((mi, model) in models.withIndex()) {
             val body = JSONObject(req.toString())
@@ -410,15 +471,19 @@ object Gemini {
                     log.add("${label(model)} #${attempt + 1}", System.currentTimeMillis() - t0, why + " · " + timingText(last), false, last)
                     tried.append("${label(model)} #${attempt + 1}: $why\n")
                     val keyBad = e is HttpErr && (e.code == 401 || e.code == 403 || (e.code == 400 && (e.message ?: "").contains("키가 맞지")))
-                    if (keyBad) throw IllegalStateException(tried.toString().trim())
+                    if (keyBad) throw KeyBad(tried.toString().trim())
                     val timeout = e is java.net.SocketTimeoutException
-                    val skipModel = timeout || (e is HttpErr && (e.code == 400 || e.code == 404 || e.code == 429))
+                    val wait429 = if (e is HttpErr && e.code == 429) retryWait(lastErrRaw) else 0L
+                    val busy = e is HttpErr && e.code in listOf(500, 502, 503, 504)
+                    val skipModel = timeout || (e is HttpErr && (e.code == 400 || e.code == 404 || (e.code == 429 && wait429 == 0L)))
                     val shortMsg = if (timeout) "${limit / 1000}초 응답 없음" else short
                     if (e is HttpErr && e.code == 404) forget(ctx, model)
                     val next = models.getOrNull(mi + 1)
                     if (attempt < 2 && !skipModel) {
-                        onStage("${label(model)} 안 됨 ($shortMsg) → 같은 모델로 다시 시도")
-                        Thread.sleep(if (attempt == 0) 2000 else 5000)
+                        // 분당 한도: 구글이 말한 만큼 · 혼잡: 8초 · 20초 · 그 밖: 2초 · 5초
+                        val ms = if (wait429 > 0) wait429 else if (busy) (if (attempt == 0) 8000L else 20000L) else (if (attempt == 0) 2000L else 5000L)
+                        onStage("${label(model)} 안 됨 ($shortMsg) → ${ms / 1000}초 쉬고 다시 시도")
+                        nap(ms)
                     } else {
                         if (next != null) onStage("${label(model)} 안 됨 ($shortMsg) → ${label(next)}로 바꿔서 시도")
                         break

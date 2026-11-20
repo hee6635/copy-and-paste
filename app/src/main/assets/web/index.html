@@ -6,6 +6,7 @@
 <title>링크메모</title>
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="ai.css">
+<link rel="stylesheet" href="tidy.css">
 </head>
 <body>
 
@@ -18,6 +19,7 @@
   </header>
   <header class="top normhead">
     <h1>링크메모</h1>
+    <button class="ib" id="btnTidy" aria-label="한 장씩 정리"><svg class="ic" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="16" rx="3"/><path d="M3 8v8M21 8v8"/></svg></button>
     <button class="ib" id="btnSettings" aria-label="설정"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></button>
   </header>
   <label class="search"><svg class="ic s" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="q" type="search" placeholder="검색" autocomplete="off"><button class="ib x hide" id="qClear" aria-label="지우기"><svg class="ic s" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></label>
@@ -76,6 +78,16 @@
 </section>
 
 <!-- 설정 -->
+<section id="tidy" class="page sub" aria-hidden="true">
+  <header class="top c">
+    <button class="ib" data-back aria-label="닫기"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="t" id="tdN"></div>
+    <button class="ib" id="tdUndo" aria-label="되돌리기"><svg class="ic" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+  </header>
+  <div class="tbar"><i id="tdBar"></i></div>
+  <div class="tstack" id="tdStack"></div>
+  <div class="tbtns" id="tdBtns"><button class="tb del" id="tdDel">지우기</button><button class="tb go" id="tdGo">두기</button></div>
+</section>
 <section id="settings" class="page sub" aria-hidden="true">
   <header class="top c">
     <button class="ib" data-back aria-label="뒤로"><svg class="ic" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
@@ -234,6 +246,7 @@
 <script src="js/settings.js"></script>
 <script src="js/ask.js"></script>
 <script src="js/slides.js"></script>
+<script src="js/tidy.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
