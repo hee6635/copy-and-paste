@@ -65,7 +65,12 @@ internal fun Gemini.schema(): JSONObject {
         "area" to str(),
         "listName" to str(),
         "places" to arr(obj("name" to str(), "t" to num(), "day" to str(), "map" to bool(), "info" to str(), req = listOf("name", "t", "info"))),
-        "recipe" to obj("servings" to int(), "ingredients" to arr(str()), "steps" to arr(obj("text" to str(), "t" to num(), req = listOf("text")))),
+        "recipe" to obj(
+            "servings" to int(),
+            "ingredients" to arr(str()),
+            "steps" to arr(obj("text" to str(), "t" to num(), req = listOf("text", "t"))),
+            req = listOf("servings", "ingredients", "steps")
+        ),
         "checklist" to arr(str()),
         "events" to arr(obj("title" to str(), "date" to str(), "time" to str(), "end" to str(), "place" to str(), req = listOf("title", "date"))),
         "tips" to arr(obj("label" to str(), "text" to str(), "from" to en("video", "author", "comment", "body", "photo"), "t" to num(), "who" to str(), req = listOf("label", "text", "from"))),
@@ -112,7 +117,24 @@ internal fun Gemini.normalize(ai: JSONObject, dur: Double = 0.0): JSONObject {
             meta.put(JSONObject().put("from", f).put("t", t.optDouble("t", -1.0)).put("who", t.optString("who")))
         }
         ai.put("summary", sum).put("sumFrom", from).put("sumLabel", lab).put("sumMeta", meta).put("tips", JSONArray())
-        ai.optJSONArray("keyshots")?.let { k -> for (i in 0 until k.length()) k.optJSONObject(i)?.let { when (it.optString("sec")) { "tips" -> it.put("sec", "summary"); "none" -> { it.remove("sec"); it.put("idx", -1) } } } }
+        val placesArr = ai.optJSONArray("places")
+        val placeTs = if (placesArr == null) emptyList() else (0 until placesArr.length())
+            .mapNotNull { placesArr.optJSONObject(it)?.optDouble("t", -1.0)?.takeIf { t -> t >= 0 } }
+        ai.optJSONArray("keyshots")?.let { k ->
+            for (i in 0 until k.length()) k.optJSONObject(i)?.let {
+                when (it.optString("sec")) {
+                    "tips" -> {
+                        val idx = it.optInt("idx", -1)
+                        val st = it.optDouble("t", -1.0)
+                        val isVideoTip = idx >= 0 && meta.optJSONObject(idx)?.optString("from") == "video"
+                        val dupPlace = placeTs.any { pt -> kotlin.math.abs(pt - st) <= 2.0 }
+                        if (st >= 0 && isVideoTip && !dupPlace) it.put("sec", "summary")
+                        else { it.remove("sec"); it.put("idx", -1) }
+                    }
+                    "none" -> { it.remove("sec"); it.put("idx", -1) }
+                }
+            }
+        }
     }
     ai.optJSONObject("recipe")?.let { r ->
         val st = r.optJSONArray("steps") ?: return@let
