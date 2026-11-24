@@ -7,6 +7,7 @@ on:
       - 'docs/**'
       - '*.md'
       - '.claude/**'
+      - 'app/src/main/assets/prompt/**'   # 정리 규칙 글: 앱이 저장소에서 받아 쓰니 빌드 필요 없음
   workflow_dispatch:
 
 permissions:

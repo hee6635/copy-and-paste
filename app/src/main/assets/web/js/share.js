@@ -37,6 +37,7 @@ function shareText(its, forAI) {
       L.push(nPlace + '. ' + p.name + (p.info ? ' — ' + plain(p.info) : '') + (forAI || p.map === false || ai.listName ? '' : '\n   지도 ' + mapUrl(p.name, ai.area)));
     });
     (ai.summary || []).forEach((x, i) => { const lb = (ai.sumLabel || [])[i]; L.push('💡 ' + (lb ? lb + ': ' : '') + plain(x)); });
+    (ai.sections || []).forEach(x => { L.push('■ ' + x.title); (x.items || []).forEach((r, i) => L.push((x.kind === 'steps' ? (i + 1) + '. ' : '  ') + plain(String(r)))); });
     (ai.links || []).forEach(l => L.push('🔗 ' + (l.label ? l.label + ': ' : '') + l.value));
     if (it.memo) L.push('📝 ' + it.memo);
     L.push('원본 ' + it.url, '');

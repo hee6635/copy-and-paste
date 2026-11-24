@@ -75,6 +75,7 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        PromptText.refresh(this)  // 저장소의 최신 정리 규칙 받아 두기 (6시간마다)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (!SaveService.alive) Store.fixStale(this)
         PhoneState.start(this)

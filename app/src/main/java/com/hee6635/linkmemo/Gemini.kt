@@ -335,7 +335,8 @@ object Gemini {
             }
             if (n > 0) log.add("사진 같이 보내기", 0, "${n}장", true)
         }
-        parts.put(JSONObject().put("text", prompt(item, folders, withVideo, noTranscript)))
+        log.add("정리 규칙", 0, PromptText.source(ctx), true)
+        parts.put(JSONObject().put("text", prompt(item, folders, withVideo, noTranscript, PromptText.get(ctx))))
         val req = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", parts)))
             .put("generationConfig", JSONObject()

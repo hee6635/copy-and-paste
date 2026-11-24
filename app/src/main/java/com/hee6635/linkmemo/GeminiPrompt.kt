@@ -1,64 +1,19 @@
 package com.hee6635.linkmemo
 
+import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlin.concurrent.thread
 
 // Gemini.kt 에서 나눔: 정리 요청 글(prompt) · 답 모양(schema)
-internal fun Gemini.prompt(item: JSONObject, folders: List<String>, withVideo: Boolean, noTranscript: Boolean = false): String {
+/**
+ * 정리 요청 글. 규칙(rules)은 PromptText 가 줌: 저장소에서 받아 둔 최신 글 → 없으면 앱에 든 assets/prompt/organize.txt
+ */
+internal fun Gemini.prompt(item: JSONObject, folders: List<String>, withVideo: Boolean, noTranscript: Boolean = false, rules: String): String {
     val sb = StringBuilder()
-    // 인트로 · 미리보기 컷은 3분 넘는 영상에만 있음 (릴스 · 쇼츠는 0:03 도 진짜 장면)
-    val longVid = item.optDouble("duration", 0.0) > 180
-    sb.append("""너는 사용자가 저장한 SNS 게시물 · 영상 · 웹페이지를 실용 메모로 정리하는 도우미야. 한국어로, 짧고 담백하게.
-
-[절대 규칙]
-1. 사실만 쓰기: 영상(말 · 화면 자막 · 간판 · 가격표) · 설명 · 본문 · 사진 · 댓글에 실제로 나온 내용만 쓰기. 본인의 사전 지식으로 보충("돈코츠 라멘 전문점", "아웃도어 의류 매장", "다양한 디저트를 즐길 수 있는")하거나 근거 없는 수식어 · 감상 · 제목 풀어쓰기 절대 금지. 정보가 적으면 짧은 그대로 두기.
-2. 중복 금지: places.info 나 recipe.steps 에 이미 쓴 메뉴 · 가격 · 조리 과정을 tips 에 되풀이하지 말기.
-3. 숨은 알짜 정보 우선: 영상 말뿐 아니라 화면 자막 · 간판에 짧게 지나가는 실행 방법 · 명령어 · 시간 · 할인 · 제휴 · 예약 조건, 그리고 작성자 답글 속 가격 · 비교 · 링크 · 주의사항을 놓치지 말기.
-4. 영상 시각(t): ${if (longVid) "영상 앞 15초 안의 인트로 · 미리보기 · 하이라이트 컷은 쓰지 말고, 실제로 그 장면을 설명하는 본 구간의 시각을 쓰기." else "짧은 영상이라 인트로가 없어요. 그 장면이 처음 나오는 시각을 그대로 쓰기."} 영상 길이를 넘는 시각은 절대 쓰지 말기.
-5. 강조 표시: 중요한 숫자 · 가격 · 시간 · 비율 · 할인명은 [[ ]] 로 감싸기 (예: [[오전 6시]], [[2,500~5,500원]], [[라면 1개당 1큰술]]).
-
-[칸별 규칙 — 반드시 아래 JSON 순서대로 작성]
-- kind: 요리법이면 recipe, 준비물 · 할 일 목록이면 checklist, 그 밖은 general.
-- area: 장소들이 있는 도시 · 지역 이름 하나 (지도 검색용, 예: 나트랑 · 후쿠오카 · 성수동). 장소 글이 아니면 빈칸.
-- listName: places 에 담은 것이 장소가 아닐 때만 항목 종류 한 단어 (예: 스킬 · 앱 · 책 · 제품). 장소면 빈칸.
-- places:
-  1) 가게 · 장소 · 숙소가 나오면 나온 순서대로 전부. 단, 설명이나 화면 핵심 자막에 언급 없이 배경에만 스친 의미 없는 간판 · 영문 슬로건은 제외.
-  2) name 은 정확한 상호명(화면 자막 · 본문 우선), t 는 처음 보이는 시각(초, 영상이 아니면 -1).
-  3) day: 여행 일정처럼 일차/구간이 나뉘면 "DAY 1", "DAY 2" 등으로 표기 (구분 없으면 빈칸).
-  4) map: 실제 방문지 · 맛집 · 숙소면 true, 일반 편의점 · 공항 이동 · 교통편이면 false.
-  5) info 는 원문(영상 자막 · 말 · 본문 · 댓글)에 실제로 나온 사실만 1~2줄(최대 80자). 나온 정보(방문 시각 · 공연 시간 · 메뉴 · 가격 · 동선 · 작성자 솔직 후기 "살 건 없었다", "작성자 또간집")만 적고, 추가 정보가 없으면 억지로 지어내지 말고 짧은 한 구절(예: "쇼핑 코스")로 끝내기. day 는 따로 칸이 있으니 info 에 "DAY 1" 을 다시 쓰지 말기.
-  6) "추천 N개" · "○○ 모음" · "TOP 10"처럼 여러 항목을 소개하면 장소가 아니어도 빠짐없이 순서대로 전부. name 은 항목 이름 그대로, info 는 원문에 나온 용도 · 특징 한 줄.
-  7) 해당 없으면 빈 목록.
-- recipe: kind 가 recipe 일 때만.
-  * servings: 몇 인분인지. 라면 · 만두 등 봉지/개수 기준 요리는 1봉지(1개)=1인분으로 계산 (예: 라면 3봉지면 servings=3). 나오지 않으면 짐작, 모르면 1.
-  * ingredients: 재료와 전체 양(servings 기준). 양은 숫자로 (예: 사리곰탕 3개, 대파 2대, 물 1800ml). 영상에 "소주잔 1잔 미만", "종이컵 반 컵" 같은 구체적 생활 계량이 나오면 "적당량"으로 뭉개지 말고 그대로 쓰기. 계량이 아예 없을 때만 "적당량".
-  * steps: 순서대로. 인분 조절을 위해 문장 안에 수량 · 계량 단위(ml · L · g · kg · 큰술 · 작은술 · 컵 · 개 · 대 · 봉지 · 장 · 줌 등)를 숫자와 함께 절대 쓰지 말고 ("물 1800ml를 넣는다" ✕ → "물을 붓는다" ○, 조리 시간 · 불 세기는 그대로 쓰기: "중불에서 [[2분]]"), "준비한 대파를 썰고", "고춧가루를 넣고"처럼 동작 · 불 세기 · 타이밍 · 상태 중심으로 쓰기. 각 단계마다 t 에 해당 동작이 시작하는 영상 시각(초, 영상이 아니면 -1).
-- checklist: kind 가 checklist 일 때만. 항목별로 짧고 명확하게.
-- events: 날짜가 정해진 행사 · 할인 · 공연 · 마감 · 예약 오픈만 0~3개. title 은 짧게, date 는 YYYY-MM-DD (연도가 없으면 오늘 기준 가장 가까운 앞날), time 은 HH:MM (없으면 빈칸), end 는 끝나는 날 YYYY-MM-DD (없으면 빈칸), place 는 장소 (없으면 빈칸). 날짜가 없으면 빈 목록.
-- tips: 아래 두 경우를 구분해서 작성.
-  * [경우 A] places · recipe · checklist 중 하나라도 있으면: 0~5개. 이미 앞 칸에 쓴 내용은 반복 금지, 억지로 채우지 말고 없으면 빈 목록. 단순 맛 평가 · 칭찬은 제외.
-    우선순위: ① 항공 · 숙소 · 티켓 예약 팁 · 할인 · 제휴 · 대체 일정 ② 비교 · 대안 · 선택 기준 ③ 조리 비율 공식 · 실패 방지 · 방문 주의사항 ④ 작성자 답글 속 실질 Q&A · 가격 · 후기.
-  * [경우 B] places · recipe · checklist 가 모두 비어 있는 일반 정보 · IT · 사용법 · 강의 · 리뷰 글이면: 핵심 실행 요약 3~6개.
-    우선순위: ① 실제 실행 방법 · 단계 · 영상 속 명령어/프롬프트 원문 ② 핵심 결과 · 기능 · 원리 ③ 이용 조건 · 비용 · 주의사항.
-    ※ "댓글에 OO 남기면 자료/링크 발송" 같은 댓글 유도는 핵심이 아니므로, 위 내용이 충분하면 빼고 꼭 필요할 때만 맨 마지막 1개 이하로만 쓰기.
-  * 각 항목 구성:
-    - label: 팁의 성격 3~8자 (예: 실행 방법, 명령어 1, 숙소 예약, 대체 일정, 주의사항)
-    - text: 핵심 내용 1줄 (55~80자, 명령어나 URL은 줄이지 말고 원문 유지, 숫자 · 시간 · 비율은 [[ ]])
-    - from: 출처 하나 — video(영상 말 · 화면 자막), author(작성자 답글), comment(유저 댓글), body(설명 · 본문), photo(사진). 영상에 나온 내용이면 댓글에 언급이 있어도 video 로 표기.
-    - t: from 이 video 면 해당 시각(초), 아니면 -1.
-    - who: from 이 author 나 comment 면 아이디, 아니면 빈칸.
-- links: 본문 · 댓글 · 영상 화면에 직접 언급된 참고 URL이나 바로 복사해 쓸 명령어/프롬프트 원문이 있으면 { label, type("url"|"copy"), value } 목록 (없으면 빈 목록). 지어내지 말고 원문에 있는 것만. 따옴표 · 코드로 나온 명령어/프롬프트는 tips 에 썼더라도 여기에도 type copy 로 꼭 넣기 (label 은 "명령어 1"처럼).
-- star: 실제 정보(가격 · 장소명 · 시간 · URL · 구체적 팁 · 비교 후기)가 담긴 댓글 번호 목록. [댓글] 줄 앞 숫자를 그대로 쓰기 (쓸모없는 댓글은 미리 빼서 번호가 건너뛰어도 다시 세지 말기). 작성자 답글이 달렸더라도 단순 감탄 · 응원 · 지인 태그 · 단답 리액션("저장꼭", "레고", "잘 다녀왔어", "만족했어요", 키워드 도배)은 제외.
-- title: (선택) 내용을 한눈에 알 수 있는 핵심 제목 15~28자. 원본 제목이 "댓글에 OO 남기면 보내드려요", "저장 필수" 같은 댓글/팔로우 유도 문구거나 내용을 알 수 없으면 실제 주제로 새로 짓기. 원본 제목이 이미 내용을 잘 말하면 빈칸.
-- category: (앞 칸을 다 쓴 뒤) 아래 목록 중 딱 하나. 요리법이면 반드시 요리: ${CATEGORIES.joinToString(", ")}
-- folder: 바로 위에서 고른 category 와 주제가 정확히 일치하는 폴더가 "내 폴더"에 있을 때만 그대로 고르기. 일치하는 폴더가 없으면 기존 폴더를 절대 억지로 고르지 말고 "category › 구체주제" 또는 "category" 로 새로 제안 (예: category 가 개발·IT 인데 내 폴더에 디자인만 있으면 "디자인" 절대 선택 금지 → "개발·IT › AI" 제안). 지역이 다르면 다른 폴더 (후쿠오카 글에 "여행 › 나트랑" 금지 → "여행 › 후쿠오카").
-- tags: 2~4개, # 없이 짧은 명사 (지명 · 음식 · 주제). category 와 같은 말 · 뜻이 겹치는 말은 빼기.
-- keyshots: (영상 있을 때만) 명령어 입력 완료 화면 · 결과 목록 · 메뉴판 · 가격표 · 지도 · 완성 요리처럼 정보가 화면에 또렷이 완성되어 보이는 장면 3~5개 (입력 전 빈 화면이나 전환 컷 금지). places 의 t 와 겹치는 장소 대표 장면은 제외.
-  * t 는 시각(초), why 는 무엇이 보이는지 짧게.
-  * sec(tips | steps | none) 와 idx(0부터)는 화면 내용이 그 줄에 직접 일치할 때만 연결. 특히 tips[idx] 의 from 이 video 가 아니면(body · author · comment) 절대 연결하지 말고 sec 는 none, idx 는 -1. (영상 없으면 빈 목록)
-- desc_ko: [설명]이 한국어가 아니면 자연스러운 한국어 번역, 한국어면 빈칸.
-- transcript: (영상 있을 때만, 맨 뒤) 영상의 내레이션/말과 화면에 크게 나오는 핵심 자막 · 명령어 · 안내문([화면])을 시간(초)과 함께 받아쓰기. 배경음악 가사와 의미 없는 배경 간판 글자는 쓰지 말기. 외국어면 text 는 원문, ko 에 자연스러운 한국어 번역 (한국어면 ko 는 빈칸). (영상 없으면 빈 목록)
-""")
+    sb.append(rules.replace("{{CATEGORIES}}", CATEGORIES.joinToString(", ")).trim()).append("\n")
     sb.append(if (withVideo) "\n[이번 자료] 영상이 같이 와요.\n" else "\n[이번 자료] 영상이 없어요 → keyshots · transcript 는 빈 목록, 모든 t 는 -1.\n")
     if (withVideo && noTranscript) sb.append("transcript 는 빈 목록으로 (앞서 답이 길어 끊겼어요).\n")
     sb.append("\n오늘: ").append(java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())).append("\n")
@@ -114,6 +69,7 @@ internal fun Gemini.schema(): JSONObject {
         "checklist" to arr(str()),
         "events" to arr(obj("title" to str(), "date" to str(), "time" to str(), "end" to str(), "place" to str(), req = listOf("title", "date"))),
         "tips" to arr(obj("label" to str(), "text" to str(), "from" to en("video", "author", "comment", "body", "photo"), "t" to num(), "who" to str(), req = listOf("label", "text", "from"))),
+        "sections" to arr(obj("title" to str(), "kind" to en("list", "steps", "table", "kv", "text"), "items" to arr(str()), req = listOf("title", "kind", "items"))),
         "links" to arr(obj("label" to str(), "type" to en("url", "copy"), "value" to str(), req = listOf("label", "type", "value"))),
         "star" to arr(int()),
         "tags" to arr(str()),
@@ -125,7 +81,7 @@ internal fun Gemini.schema(): JSONObject {
     ).put("propertyOrdering", JSONArray(listOf(
         // 내용 먼저 → 다 쓴 뒤 제목 · 갈래 · 폴더 → 받아쓰기는 맨 뒤 (답이 끊겨도 장소 · 팁은 남게)
         "kind", "area", "listName", "places", "recipe", "checklist", "events",
-        "tips", "links", "star", "title", "category", "folder", "tags", "keyshots", "desc_ko", "transcript")))
+        "tips", "sections", "links", "star", "title", "category", "folder", "tags", "keyshots", "desc_ko", "transcript")))
 }
 
 /**
@@ -175,4 +131,30 @@ internal fun junkComment(c: JSONObject): Boolean {
     if (r != null) for (k in 0 until r.length()) if (r.optJSONObject(k)?.optBoolean("own") == true) return false
     val t = c.optString("t").replace(Regex("@\\S+"), "").replace(Regex("[\\p{So}\\p{Cs}\\s!?.,~ㅋㅎㅠㅜ♡\\u200d\\ufe0f]"), "")
     return t.length < 6
+}
+
+/** 정리 규칙 글: 저장소 글을 고치면 앱 업데이트 없이 바뀜 (6시간마다 받아 둠). 이상한 글이면 안 씀 */
+object PromptText {
+    private const val URL_RAW = "https://raw.githubusercontent.com/hee6635/copy-and-paste/HEAD/app/src/main/assets/prompt/organize.txt"
+    private fun sp(ctx: Context) = ctx.getSharedPreferences("prompt", Context.MODE_PRIVATE)
+    /** 꼭 있어야 할 칸 이름이 다 있고 너무 짧지 않아야 씀 (망가진 글 막기) */
+    fun ok(t: String) = t.length > 800 && listOf("places", "tips", "links", "star", "category", "{{CATEGORIES}}", "folder", "transcript").all { it in t }
+    fun builtIn(ctx: Context) = ctx.assets.open("prompt/organize.txt").bufferedReader().use { it.readText() }
+    fun get(ctx: Context): String = sp(ctx).getString("text", null)?.takeIf { ok(it) } ?: builtIn(ctx)
+    /** 화면 · 검사용: "저장소 11.24 15:30" / "앱 기본" */
+    fun source(ctx: Context): String = if (sp(ctx).getString("text", null)?.let { ok(it) } == true) "저장소 " + (sp(ctx).getString("at", "") ?: "") else "앱 기본"
+    fun refresh(ctx: Context, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - sp(ctx).getLong("tried", 0) < 6 * 3600_000L) return
+        sp(ctx).edit().putLong("tried", now).apply()
+        thread {
+            try {
+                val c = URL(URL_RAW).openConnection() as HttpURLConnection
+                c.connectTimeout = 10000; c.readTimeout = 15000
+                val t = c.inputStream.bufferedReader().use { it.readText() }
+                if (c.responseCode == 200 && ok(t)) sp(ctx).edit().putString("text", t)
+                    .putString("at", java.text.SimpleDateFormat("MM.dd HH:mm", java.util.Locale.KOREA).format(java.util.Date())).apply()
+            } catch (_: Throwable) {}
+        }
+    }
 }

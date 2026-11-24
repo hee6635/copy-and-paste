@@ -327,3 +327,11 @@ button.k{border:0;color:var(--fg)}
 .pr.off{opacity:.45}
 .ocrl{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line);font-size:14.5px;line-height:1.45}
 .ocrl span{user-select:text;-webkit-user-select:text}.ocrl .chip{height:28px;font-size:12px;flex-shrink:0}
+/* 추가 묶음 */
+.sxt{overflow-x:auto;margin:0 -4px}
+.sxt table{border-collapse:collapse;width:100%;font-size:13.5px}
+.sxt th,.sxt td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.sxt th{font-weight:800;font-size:12.5px;background:var(--surface)}
+.sxk{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.sxk:first-of-type{border-top:0}.sxk span{color:var(--sub)}.sxk b{font-weight:700;text-align:right}
+.sec .sh + .sxk{border-top:0}

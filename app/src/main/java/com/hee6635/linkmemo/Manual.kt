@@ -27,13 +27,13 @@ object Manual {
         val sb = StringBuilder()
         if (yt) sb.append("아래 유튜브 영상을 직접 보고 정리해 줘: ").append(item.optString("url")).append("\n\n")
         else sb.append("아래 게시물을 정리해 줘 (링크: ").append(item.optString("url")).append(")\n\n")
-        sb.append(Gemini.prompt(item, ctx.folderPaths(), yt))
+        sb.append(Gemini.prompt(item, ctx.folderPaths(), yt, rules = PromptText.get(ctx)))
         sb.append("""
 
 [답 형식] 설명 · 인사 없이 JSON 하나만 ```json 코드 블록으로. 키:
 category(문자열), folder(문자열), kind("recipe"|"checklist"|"general"), area(문자열), listName(문자열),
 places([{name, t, day, map, info}]), recipe({servings, ingredients, steps: [{text, t}]}), checklist(문자열 목록),
-events([{title, date, time, end, place}]), tips([{label, text, from, t, who}]), links([{label, type, value}]), star(숫자 목록), title(문자열), tags(문자열 목록),
+events([{title, date, time, end, place}]), tips([{label, text, from, t, who}]), sections([{title, kind, items}]), links([{label, type, value}]), star(숫자 목록), title(문자열), tags(문자열 목록),
 keyshots(빈 목록), desc_ko(문자열), transcript([{t, text, ko}]).
 """)
         return sb.toString()

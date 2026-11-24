@@ -59,7 +59,7 @@ function renderAi(it) {
     ${(ai.facts || []).map((f, i) => !f || !f.text ? '' : `<button class="ts" ${+f.t >= 0 ? `data-seek="${+f.t}"` : ''}>${+f.t >= 0 ? `<b>${fmtT(f.t)}</b>` : '<b>·</b>'}<span>${esc(f.text)}</span></button>${attHtml(it, 'facts', i)}`).join('')}</div>`;
   if (ai.kind === 'checklist' && (ai.checklist || []).length) h += `<div class="sec"><div class="sh"><b>체크리스트</b><span class="ai">AI</span></div>
     ${ai.checklist.map((x, i) => `<button class="chk${(ck.c || []).includes(i) ? ' on' : ''}" data-chk="c:${i}"><i></i><span>${esc(x)}</span></button>`).join('')}</div>`;
-  h += eventsHtml(it, ai);
+  h += sectionsHtml(ai) + eventsHtml(it, ai);
   if (it.aiError) h += `<div class="sec"><div class="cmtx"><div class="why">다시 정리 실패: ${esc(String(it.aiError).split('\n')[0])}</div></div></div>`;
   el.innerHTML = h;
 }
@@ -352,4 +352,23 @@ function linksHtml(ai) {
   if (!ls.length) return '';
   return `<div class="sec"><div class="sh"><b>바로 쓰기</b></div>${ls.map(l => `<div class="lnk"><div class="h"><b>${esc(l.label || '')}</b>${l.type === 'url'
     ? `<button class="chip dark" data-open="${esc(l.value)}">열기</button>` : `<button class="chip dark" data-copytext="${esc(l.value)}">복사</button>`}</div><p>${esc(l.value)}</p></div>`).join('')}</div>`;
+}
+
+/** 추가 묶음: AI 가 고른 모양(목록 · 순서 · 표 · 이름: 값 · 글)으로 — 새 칸 없이 정리 방식을 늘림 */
+function sectionsHtml(ai) {
+  return (ai.sections || []).filter(x => x && x.title && (x.items || []).length).map(x => {
+    const it = x.items.map(String);
+    let b;
+    if (x.kind === 'table') {
+      const rows = it.map(r => r.split('|').map(c => c.trim()));
+      b = `<div class="sxt"><table><thead><tr>${rows[0].map(c => `<th>${rich(c)}</th>`).join('')}</tr></thead><tbody>${rows.slice(1).map(r => `<tr>${r.map(c => `<td>${rich(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    } else if (x.kind === 'kv') {
+      b = it.map(r => { const i = r.indexOf(':'); return `<div class="sxk"><span>${rich(i > 0 ? r.slice(0, i) : r)}</span><b>${rich(i > 0 ? r.slice(i + 1).trim() : '')}</b></div>`; }).join('');
+    } else if (x.kind === 'steps') {
+      b = it.map((r, i) => `<div class="tip3"><b>${i + 1}</b><span>${rich(r)}</span></div>`).join('');
+    } else if (x.kind === 'text') {
+      b = it.map(r => `<p class="p">${rich(r)}</p>`).join('');
+    } else b = it.map(r => `<div class="tip3"><b>·</b><span>${rich(r)}</span></div>`).join('');
+    return `<div class="sec"><div class="sh"><b>${esc(x.title)}</b></div>${b}</div>`;
+  }).join('');
 }
