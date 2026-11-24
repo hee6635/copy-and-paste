@@ -126,6 +126,7 @@ function renderCap() {
       <label class="memo" style="margin-top:8px"><small>메모</small><textarea id="cMemo" rows="1"></textarea></label>
       <div class="capat" id="cAt"></div></div>`;
     $('#cMemo').value = c.memo || ''; autoGrow($('#cMemo'));
+    zoomable(sc.querySelector('.capimg'));
   }
   const ls = (c.text || '').split('\n').map(x => x.trim()).filter(Boolean);
   $('#cOcr').innerHTML = `<div class="sh"><b>화면 글자</b>${ls.length > 1 ? `<button class="chip dark" data-copytext="${esc(c.text)}">전체 복사</button>` : ''}</div>` +
@@ -138,4 +139,28 @@ function saveCapMemo() {
   const it = byId(cur); const c = it && (it.captures || []).find(x => x.id === curCap); if (!c) return;
   const v = $('#cMemo').value; if (c.memo === v) return;
   c.memo = v; A.update(cur, JSON.stringify({ captures: it.captures }));
+}
+
+/** 사진 확대: 두 손가락 벌리기 · 두 번 톡(2배 ↔ 원래) · 확대 중 한 손가락으로 옮기기 (transform 만) */
+function zoomable(box) {
+  if (!box) return;
+  const img = box.querySelector('img'); if (!img) return;
+  img.draggable = false;  // 사진 끌기(파일 끌기)가 손가락 이동을 끊지 않게
+  let k = 1, x = 0, y = 0, pts = new Map(), start = null, lastTap = 0;
+  const clamp = () => { const mx = box.clientWidth * (k - 1) / 2, my = box.clientHeight * (k - 1) / 2; x = Math.max(-mx, Math.min(mx, x)); y = Math.max(-my, Math.min(my, y)); };
+  const apply = anim => { img.style.transition = anim ? 'transform .25s var(--ease)' : 'none'; img.style.transform = `translate(${x}px,${y}px) scale(${k})`; box.style.touchAction = k > 1 ? 'none' : 'pan-y'; };
+  const dist = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+  box.addEventListener('pointerdown', e => {
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); box.setPointerCapture(e.pointerId);
+    start = { k, x, y, d: pts.size === 2 ? dist() : 0, px: e.clientX, py: e.clientY };
+    if (pts.size === 1) { const now = Date.now(); if (now - lastTap < 300) { k = k > 1 ? 1 : 2; x = y = 0; apply(true); lastTap = 0; } else lastTap = now; }
+  });
+  box.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2 && start.d) { k = Math.max(1, Math.min(4, start.k * dist() / start.d)); clamp(); apply(false); }
+    else if (pts.size === 1 && k > 1) { x = start.x + e.clientX - start.px; y = start.y + e.clientY - start.py; clamp(); apply(false); }
+  });
+  const up = e => { pts.delete(e.pointerId); start = { k, x, y, d: 0, px: e.clientX, py: e.clientY }; if (k <= 1.02) { k = 1; x = y = 0; apply(true); } };
+  box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
 }

@@ -144,7 +144,8 @@ input,textarea{font:inherit;color:var(--fg)}
 .bar5 .danger{color:var(--danger)}
 
 /* 캡처 보기 */
-.capimg{margin:0 16px;border-radius:20px;overflow:hidden;background:#000}
+.capimg{margin:0 16px;border-radius:20px;overflow:hidden;background:#000;touch-action:pan-y}
+.capimg img{will-change:transform;transform-origin:center}
 .capimg img{display:block;width:100%;max-height:60vh;object-fit:contain}
 .ocr{background:var(--surface);border-radius:14px;padding:12px 14px;font-size:14.5px;line-height:1.6;white-space:pre-wrap;user-select:text;-webkit-user-select:text}
 .ocr small{display:block;font-size:12px;color:var(--sub);font-weight:600;margin-bottom:2px}
