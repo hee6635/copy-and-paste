@@ -16,7 +16,7 @@ function renderAi(it) {
       <div class="bt"><button class="chip dark" data-airedo>다시 정리</button><button class="chip" data-manual>제미나이 앱으로</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>${logHtml(it.aiLog, true)}</div>` : '';
     return;
   }
-  let h = deepHtml(it) + warnHtml(ai);
+  let h = deepHtml(it) + warnHtml(ai) + linksHtml(ai);
   const sum = ai.summary || [];
   const places = (ai.places || []).filter(p => p && p.name);
   const pName = esc(ai.listName || '장소');
@@ -34,14 +34,14 @@ function renderAi(it) {
     h += longNote + `<div class="sec"><div class="sh"><b>꼭 알아둘 팁</b>${redo}</div>${runinfo}
       ${sum.map((x, i) => `<div class="tip3">${srcChip(it, i) || '<b>·</b>'}<span>${tipLabel(it, i)}${rich(x)}</span></div>`).join('')}${suggHtml}</div>`;
     h += `<div class="sec"><div class="sh"><b>목차 ${chs.length}</b>${(it.ytChapters || []).length ? '<span class="badge2">유튜버 목차</span>' : ''}</div>${chs.map((c, i) => chapterRow(it, chs, i)).join('')}</div>`;
-    if (places.length) h += `<div class="sec"><div class="sh"><b>${pName} ${places.length}</b></div>${places.map((p, i) => placeRow(it, p, i)).join('')}${routeHtml(it, places)}</div>`;
+    if (places.length) h += `<div class="sec"><div class="sh"><b>${pName} ${places.length}</b></div>${placeList(it, places)}</div>`;
     if (it.aiError) h += `<div class="sec"><div class="cmtx"><div class="why">다시 정리 실패: ${esc(String(it.aiError).split('\n')[0])}</div></div></div>`;
     el.innerHTML = h;
     return;
   }
   h += longNote;
   if (places.length) {
-    h += `<div class="sec"><div class="sh"><b>${pName} ${places.length}</b>${redo}</div>${runinfo}${places.map((p, i) => placeRow(it, p, i)).join('')}${routeHtml(it, places)}</div>`;
+    h += `<div class="sec"><div class="sh"><b>${pName} ${places.length}</b>${redo}</div>${runinfo}${placeList(it, places)}</div>`;
   } else if (rec) {
     const f = srvF(it);
     h += `<div class="sec"><div class="sh"><b>재료 ${(rec.ingredients || []).length}</b><span class="shr">${srvHtml(it, rec)}${redo}</span></div>${runinfo}
@@ -113,8 +113,8 @@ const rich = s => esc(s).replace(/\[\[(.+?)\]\]/g, (m, x) => CHIPY.test(x) ? `<s
 function placeRow(it, p, i) {
   const c = (it.captures || []).find(c => c.at && c.at.sec === 'places' && +c.at.i === i);
   const th = c ? `<button class="th2" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><i>${i + 1}</i></button>` : `<div class="th2 n"><i>${i + 1}</i></div>`;
-  const pin = it.ai && !it.ai.listName ? `<button class="pin" data-map="${esc(mapQ(it, p))}" aria-label="지도에서 보기"><svg class="ic" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg></button>` : '';
-  return `<div class="pr${pin ? ' haspin' : ''}">${th}<div class="pb"><b><span>${esc(p.name)}</span>${+p.t >= 0 ? `<button class="tm" data-seek="${+p.t}">${fmtT(p.t)}</button>` : ''}</b><p>${rich(p.info || '')}</p></div>${pin}</div>`;
+  const pin = it.ai && !it.ai.listName && p.map !== false ? `<button class="pin" data-map="${esc(mapQ(it, p))}" aria-label="지도에서 보기"><svg class="ic" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg></button>` : '';
+  return `<div class="pr${pin ? ' haspin' : ''}${p.map === false ? ' off' : ''}">${th}<div class="pb"><b><span>${esc(p.name)}</span>${+p.t >= 0 ? `<button class="tm" data-seek="${+p.t}">${fmtT(p.t)}</button>` : ''}</b><p>${rich(p.info || '')}</p></div>${pin}</div>`;
 }
 function stepRow(it, x, i) {
   const c = (it.captures || []).find(c => c.at && c.at.sec === 'steps' && +c.at.i === i);
@@ -307,10 +307,11 @@ function routeLinks(it, places) {
   }
   return out;
 }
-function routeHtml(it, places) {
+function routeHtml(it, places, label) {
+  places = places.filter(p => p.map !== false);
   if (!it.ai || it.ai.listName || places.length < 2) return '';
   const ls = routeLinks(it, places);
-  return `<div class="route">${ls.map(([a, b, u]) => `<button class="chip dark" data-route="${esc(u)}"><svg class="ic" viewBox="0 0 24 24"><path d="M6 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM6 15V9a3 3 0 0 1 3-3h7M18 9v6a3 3 0 0 1-3 3H8"/></svg>경로 보기${ls.length > 1 ? ' ' + a + '–' + b : ''}</button>`).join('')}</div>`;
+  return `<div class="route">${ls.map(([a, b, u]) => `<button class="chip dark" data-route="${esc(u)}"><svg class="ic" viewBox="0 0 24 24"><path d="M6 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM6 15V9a3 3 0 0 1 3-3h7M18 9v6a3 3 0 0 1-3 3H8"/></svg>${label || '경로 보기'}${ls.length > 1 ? ' ' + a + '–' + b : ''}</button>`).join('')}</div>`;
 }
 /** 요약 줄 출처 (영상 · 본문 · 댓글 · 작성자 댓글 · 사진) */
 const srcChip = (it, i) => {
@@ -330,4 +331,25 @@ function warnHtml(ai) {
   const w = ai.noVideo && !ai.light ? ['영상을 못 보고 글만으로 정리했어요', ai.noVideoWhy || '', '영상으로 다시']
     : ai.cut ? ['답이 중간에 끊겨 일부만 보여요', ai.cut, '다시 정리'] : null;
   return w ? `<div class="sec warn"><div class="cmtx"><b>${w[0]}</b>${w[1] ? `<div class="why">${esc(w[1])}</div>` : ''}<div class="bt"><button class="chip dark" data-airedo>${w[2]}</button><button class="chip" data-pane-go="orig">기록 보기</button></div></div></div>` : '';
+}
+
+/** 장소 목록: DAY 가 2개 이상이면 DAY 칩 + DAY 마다 묶고 DAY 별 경로 */
+let curDay = '';
+function placeList(it, places) {
+  const days = [...new Set(places.map(p => (p.day || '').trim()).filter(Boolean))];
+  if (days.length < 2) return places.map((p, i) => placeRow(it, p, i)).join('') + routeHtml(it, places);
+  if (curDay && !days.includes(curDay)) curDay = '';
+  const idx = new Map(places.map((p, i) => [p, i]));
+  const chips = `<div class="daychips">${['', ...days].map(d => `<button class="chip${d === curDay ? ' dark' : ''}" data-dayf="${esc(d)}">${d ? esc(d) : '전체'}</button>`).join('')}</div>`;
+  return chips + days.map(d => {
+    const ps = places.filter(p => (p.day || '').trim() === d), n = ps.filter(p => p.map !== false).length;
+    return `<div class="dayg${curDay && curDay !== d ? ' hide' : ''}" data-day="${esc(d)}"><div class="dayh"><b>${esc(d)}</b>${routeHtml(it, ps, '경로 ' + n + '곳')}</div>${ps.map(p => placeRow(it, p, idx.get(p))).join('')}</div>`;
+  }).join('') + places.filter(p => !(p.day || '').trim()).map(p => placeRow(it, p, idx.get(p))).join('');
+}
+/** 바로 쓰기: 원문에 나온 명령어 · 프롬프트([복사]) · 링크([열기]) */
+function linksHtml(ai) {
+  const ls = (ai.links || []).filter(l => l && l.value);
+  if (!ls.length) return '';
+  return `<div class="sec"><div class="sh"><b>바로 쓰기</b></div>${ls.map(l => `<div class="lnk"><div class="h"><b>${esc(l.label || '')}</b>${l.type === 'url'
+    ? `<button class="chip dark" data-open="${esc(l.value)}">열기</button>` : `<button class="chip dark" data-copytext="${esc(l.value)}">복사</button>`}</div><p>${esc(l.value)}</p></div>`).join('')}</div>`;
 }

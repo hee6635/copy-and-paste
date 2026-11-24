@@ -127,7 +127,9 @@ function renderCap() {
       <div class="capat" id="cAt"></div></div>`;
     $('#cMemo').value = c.memo || ''; autoGrow($('#cMemo'));
   }
-  $('#cOcr').innerHTML = `<small>화면 글자</small>${c.ocr === 'busy' ? '읽는 중…' : (c.text ? esc(c.text) : '글자가 없어요')}`;
+  const ls = (c.text || '').split('\n').map(x => x.trim()).filter(Boolean);
+  $('#cOcr').innerHTML = `<div class="sh"><b>화면 글자</b>${ls.length > 1 ? `<button class="chip dark" data-copytext="${esc(c.text)}">전체 복사</button>` : ''}</div>` +
+    (c.ocr === 'busy' ? '읽는 중…' : ls.length ? ls.map(x => `<div class="ocrl"><span>${esc(x)}</span><button class="chip" data-copytext="${esc(x)}">복사</button></div>`).join('') : '글자가 없어요');
   const ai = it.ai || {};
   const where = !c.at ? '캡처 칸에만' : c.at.sec === 'summary' ? '팁: ' + plain((ai.summary || [])[c.at.i] || '') : c.at.sec === 'places' ? '장소: ' + (((ai.places || [])[c.at.i] || {}).name || '') : c.at.sec === 'steps' ? '순서 ' + (+c.at.i + 1) : '정보: ' + (((ai.facts || [])[c.at.i] || {}).text || '');
   $('#cAt').innerHTML = `<span>붙인 곳 <b>${esc(where)}</b></span><button class="chip" data-capmove>바꾸기</button>`;

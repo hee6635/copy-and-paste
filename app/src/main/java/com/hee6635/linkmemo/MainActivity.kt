@@ -305,6 +305,10 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        /** 글로 공유 (카톡 · AI 앱에 바로 붙음) */
+        @JavascriptInterface fun shareMsg(text: String) {
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "공유"))
+        }
         @JavascriptInterface fun shareText(name: String, text: String) {
             val dir = File(cacheDir, "share").also { it.mkdirs() }
             val safe = name.replace(Regex("[\\\\/:*?\"<>|\\n]"), " ").trim().take(40).ifEmpty { "메모" }

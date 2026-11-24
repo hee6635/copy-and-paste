@@ -51,7 +51,7 @@ function sendAsk(q) {
 }
 function refRow(id) {
   const it = byId(id); if (!it) return '';
-  return `<button class="arow" data-id="${esc(id)}"><div class="at">${it.thumb ? `<img src="${fileUrl(id, it.thumb)}" alt="">` : platIcon(it.platform)}</div><div class="ab"><b>${esc(it.title || it.url)}</b><span>${esc(PLAT[it.platform] || '')} · ${fmtD(it.createdAt)}</span></div></button>`;
+  return `<button class="arow" data-id="${esc(id)}"><div class="at">${it.thumb ? `<img src="${fileUrl(id, it.thumb)}" alt="">` : platIcon(it.platform)}</div><div class="ab"><b>${esc(ttl(it))}</b><span>${esc(PLAT[it.platform] || '')} · ${fmtD(it.createdAt)}</span></div></button>`;
 }
 function renderAsk() {
   const el = $('#askLog');

@@ -136,7 +136,7 @@ function cardHtml(it) {
   const thumb = it.thumb ? `<div class="th" style="aspect-ratio:1/${ratio.toFixed(3)}"><img loading="lazy" src="${fileUrl(it.id, it.thumb)}" alt="">${it.kind && it.kind !== '웹' ? `<span class="badge">${esc(it.kind)}${it.duration ? ' ' + fmtT(it.duration) : ''}</span>` : ''}</div>` : '';
   const memo = it.memo ? `<div class="cm1">${esc(it.memo)}</div>` : '';
   const folder = it.folder && fById(it.folder) && !fSub ? `<span class="tag">${esc(fById(it.folder).name)}</span>` : '';
-  return `<button class="card${sel.has(it.id) ? ' picked' : ''}${landing[it.id] > Date.now() ? ' land' : ''}" data-id="${esc(it.id)}"><span class="ck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 12.5l4 4 8-9"/></svg></span>${thumb}<div class="cb"><div class="ct">${esc(it.title || it.url)}</div>
+  return `<button class="card${sel.has(it.id) ? ' picked' : ''}${landing[it.id] > Date.now() ? ' land' : ''}" data-id="${esc(it.id)}"><span class="ck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 12.5l4 4 8-9"/></svg></span>${thumb}<div class="cb"><div class="ct">${esc(ttl(it))}</div>
     <div class="cs">${esc(PLAT[it.platform] || '')}${it.author ? ' · ' + esc(it.author) : ''}</div>${memo}${folder}${it.aiBusy ? `<span class="tag busy">AI <span data-since="${it.aiBusyAt || Date.now()}">${since(it.aiBusyAt)}</span></span>` : ''}</div></button>`;
 }
 
@@ -290,7 +290,7 @@ function openOrder() {
 function renderOrder() {
   $('#ordList').innerHTML = ordList.map(id => { const it = byId(id); return `<div class="orow2" data-oid="${esc(id)}">
     <div class="ot">${it.thumb ? `<img src="${fileUrl(id, it.thumb)}" alt="">` : platIcon(it.platform)}</div>
-    <div class="ob"><b>${esc(it.title || it.url)}</b><span>${esc(fPath(it.folder) || PLAT[it.platform] || '')}</span></div>
+    <div class="ob"><b>${esc(ttl(it))}</b><span>${esc(fPath(it.folder) || PLAT[it.platform] || '')}</span></div>
     <div class="grip" aria-label="끌어서 옮기기"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg></div></div>`; }).join('');
 }
 function saveOrder() {

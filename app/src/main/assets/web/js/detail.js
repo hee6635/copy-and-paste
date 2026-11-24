@@ -3,7 +3,7 @@
 // ── 상세 ──
 function openDetail(id, from) {
   const it = byId(id); if (!it) return;
-  cur = id; curTab = it.platform === 'web' ? 'body' : 'desc'; curPane = 'guide';
+  cur = id; curTab = it.platform === 'web' ? 'body' : 'desc'; curPane = 'guide'; cmtAll = false; curDay = '';
   renderDetail(true);
   $('#dScroll').scrollTop = 0;
   $('#detail .dtop').classList.remove('tt');
@@ -23,11 +23,11 @@ function zoomFrom(el) {
 }
 
 // 탭: 가이드 · 캡처 · 원본 (한 화면 안에서 보이기만 바꿈)
-let curPane = 'guide';
+let curPane = 'guide', cmtAll = false;
 const PLAY = '<svg class="ic" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
 function renderDetail(full) {
   const it = byId(cur); if (!it) return;
-  $('#dTopTitle').textContent = it.title || '';
+  $('#dTopTitle').textContent = ttl(it);
   const sc = $('#dScroll');
   if (full || !sc.querySelector('.meta')) {
     const media = '';  // 영상은 기본 플레이어로 봄 (앱 화면은 일부 소리 형식을 못 풀어서)
@@ -46,7 +46,7 @@ function renderDetail(full) {
   const th2 = busy ? `<div class="hthumb n dl"><b>${it.progress || 0}%</b></div>` : !it.video && canGetVideo(it) && it.thumb ? th.replace('<button class="hthumb"', '<button class="hthumb" data-dlask') : th;
   const verr = !busy && it.videoError ? `<div class="vfail"><b>영상을 못 받았어요</b><span>${esc(it.videoError)}</span><button class="chip dark" data-dlvideo>다시 시도</button></div>` : '';
   sc.querySelector('.meta').innerHTML = `<div class="s">${esc(PLAT[it.platform] || '')}${it.author ? ' · ' + esc(it.author) : ''} · ${fmtD(it.createdAt)}</div>
-    <div class="hrow"><h2>${esc(it.title || it.url)}</h2>${th2}</div>
+    <div class="hrow"><h2>${esc(ttl(it))}</h2>${th2}</div>
     <div class="chiprow"><button class="fchip" id="dFolder"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>${esc(fPath(it.folder) || '폴더 없음')}<svg class="ic chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
     <button class="fchip" id="dCat">${esc(it.category ? catLabel(it.category) : '키워드 없음')}<svg class="ic chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
     ${(it.tags || []).map(t => `<button class="tg" data-tag="${esc(t)}">#${esc(t)}</button>`).join('')}
@@ -59,7 +59,6 @@ function renderDetail(full) {
   renderSim(it);
   renderPanes(it);
   syncAcc();
-  $('#aSave').disabled = !it.video;
 }
 
 function renderPanes(it) {
@@ -80,7 +79,7 @@ function renderSim(it) {
     if (it.category && x.category === it.category) sc += 1;
     return { x, sc };
   }).filter(o => o.sc >= 2).sort((a, b) => b.sc - a.sc).slice(0, 6);
-  el.innerHTML = sim.length ? `<div class="simh">비슷한 메모</div><div class="simg">${sim.map(({ x }) => `<button class="simc" data-id="${esc(x.id)}">${x.thumb ? `<img src="${fileUrl(x.id, x.thumb)}" alt="" loading="lazy">` : ''}<b>${esc(x.title || x.url)}</b></button>`).join('')}</div>` : '';
+  el.innerHTML = sim.length ? `<div class="simh">비슷한 메모</div><div class="simg">${sim.map(({ x }) => `<button class="simc" data-id="${esc(x.id)}">${x.thumb ? `<img src="${fileUrl(x.id, x.thumb)}" alt="" loading="lazy">` : ''}<b>${esc(ttl(x))}</b></button>`).join('')}</div>` : '';
 }
 
 // 접기 · 펼치기 (상세를 열 때마다 접힌 상태로 시작)
@@ -138,10 +137,12 @@ function renderTabs(it) {
     const tools = it.commentBusy ? '<div class="none">댓글 가져오는 중…</div>'
       : !cs.length && it.commentError ? `<div class="cmtx"><b>댓글을 못 가져왔어요</b><div class="why">${esc(String(it.commentError).split('\n')[0])}</div><div class="bt"><button class="chip dark" data-refetch>다시 가져오기</button><button class="chip" data-diag="${esc(it.id)}">원인 검사</button></div></div>`
       : !cs.length ? `<div class="cmtx"><div class="none">댓글이 없어요</div>${ref ? '<button class="chip" data-refetch>다시 가져오기</button>' : ''}</div>` : '';
-    const ordered = cs.filter(c => c.star).concat(cs.filter(c => !c.star && !cmtJunk(c)), cs.filter(c => !c.star && cmtJunk(c)));
-    const nTop = ordered.filter(c => c.star || !cmtJunk(c)).length;
-    body = tools || ordered.map((c, i) => (i === nTop ? `<button class="more" data-cmtmore>나머지 ${ordered.length - nTop}개 보기</button><div class="hide" id="cmtRest">` : '') + `<div class="cmt${c.star ? ' star' : ''}"><div class="h"><b>${c.star ? '★ ' : ''}@${esc(c.a)}</b><span>♡ ${c.l || 0}</span></div><p>${esc(c.t)}</p>
-      ${(c.r || []).map(r => `<div class="rep"><div class="h"><b>@${esc(r.a)}${r.own ? '<span class="own">작성자</span>' : ''}</b><span>♡ ${r.l || 0}</span></div><p>${esc(r.t)}</p></div>`).join('')}</div>`).join('') + (ordered.length > nTop ? '</div>' : '') + (ref ? '<button class="refetch" data-refetch>댓글 다시 가져오기</button>' : '');
+    // 정보 댓글(★)만 / 전체 — ★ 이 없으면 전체
+    const info = cs.filter(c => c.star), showAll = cmtAll || !info.length;
+    const ordered = showAll ? info.concat(cs.filter(c => !c.star && !cmtJunk(c)), cs.filter(c => !c.star && cmtJunk(c))) : info;
+    const tg = info.length && cs.length > info.length ? `<div class="daychips"><button class="chip${showAll ? '' : ' dark'}" data-cmtall="0">★ 정보 ${info.length}</button><button class="chip${showAll ? ' dark' : ''}" data-cmtall="1">전체 ${cs.length}</button></div>` : '';
+    body = tools || tg + ordered.map(c => `<div class="cmt${c.star ? ' star' : ''}"><div class="h"><b>${c.star ? '★ ' : ''}@${esc(c.a)}</b><span>♡ ${c.l || 0}</span></div><p>${esc(c.t)}</p>
+      ${(c.r || []).map(r => `<div class="rep"><div class="h"><b>@${esc(r.a)}${r.own ? '<span class="own">작성자</span>' : ''}</b><span>♡ ${r.l || 0}</span></div><p>${esc(r.t)}</p></div>`).join('')}</div>`).join('') + (ref ? '<button class="refetch" data-refetch>댓글 다시 가져오기</button>' : '');
   }
   $('#dBody').innerHTML = `<div class="sec">${body}</div>`;
   const vb = it.video ? '<button class="chip" data-dlvideo>영상 다시 받기</button>' : canGetVideo(it) ? '<button class="chip dark" data-dlvideo>영상 받기</button>' : '';

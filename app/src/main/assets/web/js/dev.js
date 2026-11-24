@@ -26,7 +26,7 @@ function devBridge() {
     items: () => JSON.stringify(data),
     add: (url, mode, memo) => JSON.stringify({ id: 'n' + Math.random(), url, mode, memo, platform: 'web', status: 'saving', stage: '대기 중', progress: 0, createdAt: Date.now() }),
     update: () => '', remove: () => {}, retry: () => {}, capture: () => '', removeCapture: () => '',
-    open: () => {}, copy: () => {}, shareText: () => {}, exportFile: () => {},
+    open: () => {}, copy: () => {}, shareText: () => {}, shareMsg: (t) => console.log('share\n' + t), exportFile: () => {},
     settings: () => JSON.stringify({ quality: '720', igLogin: false, used: 1.2e9, tool: '2026.11.01', app: '0.1' }),
     setQuality: () => {}, refetchComments: () => {}, setGeminiKey: () => {}, setAiOn: () => {}, aiRedo: () => {}, aiCancel: () => {}, batteryUnrestrict: () => {}, setAiSpeed: () => {}, backup: () => {}, restore: () => {},
       usage: () => JSON.stringify({ today: { 'gemini-flash-lite-latest': { n: 12, tok: 34000 } }, month: { 'gemini-flash-lite-latest': { n: 40, tok: 120000 }, 'gemini-flash-latest': { n: 3, tok: 9000 } }, last429: { at: Date.now(), model: 'gemini-flash-latest', metric: 'generativelanguage.googleapis.com/generate_requests_per_model_per_day', value: '20', retry: '33s' }, reset: '11월 20일 오후 5시', limits: { 'gemini-flash-lite-latest': 1000, 'gemini-flash-latest': 20 }, dom: 19, dim: 30, memos: 30 }),

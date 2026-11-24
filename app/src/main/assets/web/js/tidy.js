@@ -31,7 +31,7 @@ function ago(ms) {
 function tCardHtml(it, back) {
   const ai = it.ai || {};
   const thumb = it.thumb ? `<div class="tth"><img src="${fileUrl(it.id, it.thumb)}" alt=""><span class="tsrc">${esc(PLAT[it.platform] || '')}</span>${it.duration ? `<span class="badge">${fmtT(it.duration)}</span>` : ''}</div>` : '';
-  if (back) return `<div class="tcard back">${thumb}<div class="tcb"><h3>${esc(it.title || it.url)}</h3></div></div>`;
+  if (back) return `<div class="tcard back">${thumb}<div class="tcb"><h3>${esc(ttl(it))}</h3></div></div>`;
   const sum = (ai.summary || []).slice(0, 3).map(x => `<li>${rich(x)}</li>`).join('');
   const s = tSugg(it);
   const cur = it.folder && fById(it.folder) ? fPath(it.folder) : '';
@@ -39,7 +39,7 @@ function tCardHtml(it, back) {
     + (s ? `<button class="tchip${tPick === 'keep' ? ' on' : ''}" data-tpick="keep">${cur ? '그대로 · ' + esc(cur) : '폴더 없이'}</button>` : '')
     + `<button class="tchip" data-tother>다른 폴더</button>`;
   return `<div class="tcard" id="tTop">${thumb}<div class="tstamp del">지우기</div><div class="tstamp ok">${s && tPick === 'sugg' ? '옮기기' : '두기'}</div>
-    <div class="tcb"><h3>${esc(it.title || it.url)}</h3><div class="tmeta">${ago(it.createdAt)} 저장${cur ? ' · ' + esc(cur) : ''}</div>
+    <div class="tcb"><h3>${esc(ttl(it))}</h3><div class="tmeta">${ago(it.createdAt)} 저장${cur ? ' · ' + esc(cur) : ''}</div>
     ${sum ? `<ul class="tsum">${sum}</ul>` : ''}${it.memo ? `<div class="tmemo">${esc(it.memo)}</div>` : ''}
     <div class="tai"><div class="tah">${s ? '어디로 둘까요<span>AI</span>' : '폴더'}</div><div class="tchips">${chips}</div></div></div></div>`;
 }

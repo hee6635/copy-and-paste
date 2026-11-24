@@ -317,3 +317,13 @@ button.k{border:0;color:var(--fg)}
 .hthumb.dl b{font-size:14px;font-weight:800}
 .vfail{display:flex;flex-direction:column;align-items:flex-start;gap:6px;background:var(--bg);border-radius:16px;padding:14px;margin-top:12px}
 .vfail span{font-size:13px;color:var(--danger);word-break:break-all}
+/* 바로 쓰기 · DAY */
+.lnk{background:var(--surface);border-radius:12px;padding:10px 11px;margin-top:7px}
+.lnk .h{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;margin-bottom:4px}
+.lnk p{font-size:14px;font-weight:600;line-height:1.45;word-break:break-all;user-select:text;-webkit-user-select:text}
+.daychips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin-bottom:6px}.daychips .chip{flex-shrink:0}
+.dayh{display:flex;justify-content:space-between;align-items:center;padding:10px 0 6px;border-bottom:1px solid var(--line)}
+.dayh b{font-size:13.5px;font-weight:800}.dayh .route{margin:0}
+.pr.off{opacity:.45}
+.ocrl{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line);font-size:14.5px;line-height:1.45}
+.ocrl span{user-select:text;-webkit-user-select:text}.ocrl .chip{height:28px;font-size:12px;flex-shrink:0}

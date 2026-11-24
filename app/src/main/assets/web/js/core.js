@@ -14,6 +14,8 @@ let pendingUrl = '';
 const stack = [];        // 열린 화면 순서 (뒤로가기는 맨 위부터)
 
 const PLAT = { instagram: 'instagram', youtube: 'youtube', web: '웹' };
+/** 보이는 제목: AI 가 새로 지은 제목(댓글 유도 문구 대신) → 원본 제목 → 링크 */
+const ttl = it => (it.ai && it.ai.title) || it.title || it.url;
 const fileUrl = (id, f) => '/files/' + encodeURIComponent(id) + '/' + encodeURIComponent(f);
 const fmtT = t => { t = Math.max(0, Math.floor(t || 0)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const fmtD = ms => { const d = new Date(ms); return (d.getMonth() + 1) + '.' + d.getDate(); };

@@ -92,6 +92,7 @@ document.addEventListener('click', e => {
   if (t.closest('#selAll')) { const v = visible(); if (sel.size === v.length) sel.clear(); else v.forEach(it => sel.add(it.id)); renderHome(); return; }
   if (t.closest('#sMove')) return openMove([...sel]);
   if (t.closest('#sOrder')) return openOrder();
+  if (t.closest('#sShare')) return sel.size ? shareSheet([...sel]) : toast('공유할 메모를 골라 주세요');
   if (t.closest('#sDel')) return confirmAsk(sel.size + '개를 지울까요?', '지우기', () => {
     const ids = [...sel]; A.removeMany(JSON.stringify(ids)); items = items.filter(x => !ids.includes(x.id));
     meta.order = meta.order.filter(id => !ids.includes(id)); saveMeta(); endSelect(); toast(ids.length + '개를 지웠어요');
@@ -99,13 +100,16 @@ document.addEventListener('click', e => {
   if (t.closest('#ordDone')) { saveOrder(); closePage('order'); if (selecting) endSelect(); toast('순서를 바꿨어요'); return; }
   if (t.closest('[data-dlvideo]')) { const it = byId(cur); if (it.status === 'saving') return toast('받는 중이에요'); it.status = 'saving'; it.stage = '영상 받는 중'; it.progress = 0; renderDetail(false); A.downloadVideo(cur); toast('영상을 받는 중이에요'); return; }
   if (t.closest('[data-dlask]')) { const id = cur; confirmAsk('영상을 받을까요?', '받기', () => { const it = byId(id); it.status = 'saving'; it.stage = '영상 받는 중'; it.progress = 0; renderDetail(false); A.downloadVideo(id); }, true); return; }
-  if (t.closest('[data-vsave]')) { $('#aSave').click(); return; }
   const cs2 = t.closest('[data-chsub]'); if (cs2) { cs2.nextElementSibling.classList.toggle('hide'); cs2.textContent = cs2.nextElementSibling.classList.contains('hide') ? '이 부분 자막 ⌄' : '접기 ⌃'; return; }
   const lm = t.closest('[data-lim]'); if (lm) { const m = lm.dataset.lim; return ask(mLabel(m) + ' 하루 한도', '한도 (번)', v => { const n = parseInt(v, 10); if (n > 0) { A.setLimit(m, n); renderUsage(); } }, lm.dataset.v); }
   const dm = t.closest('[data-dm]'); if (dm) return setDockMode(dm.dataset.dm);
   const ex = t.closest('[data-askex]'); if (ex) return sendAsk(ex.dataset.askex);
   const arw = t.closest('.arow, .simc'); if (arw) return openDetail(arw.dataset.id);
   if (t.closest('[data-cmtmore]')) { $('#cmtRest').classList.remove('hide'); t.closest('[data-cmtmore]').remove(); return; }
+  const df = t.closest('[data-dayf]'); if (df) { curDay = df.dataset.dayf; renderAi(byId(cur)); return; }
+  const lo = t.closest('[data-open]'); if (lo) { A.open(lo.dataset.open); return; }
+  const cx = t.closest('[data-copytext]'); if (cx) { A.copy(cx.dataset.copytext); toast('복사했어요'); return; }
+  const ca = t.closest('[data-cmtall]'); if (ca) { cmtAll = ca.dataset.cmtall === '1'; renderTabs(byId(cur)); return; }
   const pg = t.closest('[data-pane-go]'); if (pg) { curPane = pg.dataset.paneGo; renderPanes(byId(cur)); return; }
   if (t.closest('[data-vshow]')) return playNative(byId(cur), 0);
   const mp = t.closest('[data-map]'); if (mp) { A.open('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(mp.dataset.map)); return; }
@@ -220,7 +224,9 @@ document.addEventListener('input', e => {
 document.addEventListener('focusout', e => { if (e.target.id === 'dMemo') saveMemo(); if (e.target.id === 'cMemo') saveCapMemo(); });
 
 $('#aOpen').onclick = () => { const it = byId(cur); if (it) A.open(it.url); };
-$('#aSave').onclick = () => { const it = byId(cur); if (it && it.video) { A.exportFile(it.id, it.video); toast('갤러리에 저장하는 중…'); } };
+function saveOrig() { const it = byId(cur); if (it && it.video) { A.exportFile(it.id, it.video); toast('갤러리에 저장하는 중…'); } }
+$('#aMore').onclick = () => { const it = byId(cur); if (!it) return; optSheet('', (it.video ? [['영상 갤러리에 저장', saveOrig]] : []).concat([['AI 다시 정리', () => $('#dScroll [data-airedo]') ? $('#dScroll [data-airedo]').click() : A.aiRedo(cur)], ['삭제', delMemo, 'danger']])); };
+$('#aShare').onclick = () => shareSheet([cur]);
 $('#aCopy').onclick = () => {
   const it = byId(cur); if (!it) return;
   const done = (txt, what) => { A.copy(txt); toast(what + ' 복사했어요'); };
@@ -237,9 +243,9 @@ $('#aCopy').onclick = () => {
   rows.push(['txt 파일로 보내기', () => A.shareText(it.title || 'memo', itemText(it))]);
   optSheet('복사', rows);
 };
-$('#aDel').onclick = () => confirmAsk('이 메모를 지울까요?', '지우기', () => {
+function delMemo() { confirmAsk('이 메모를 지울까요?', '지우기', () => {
   const id = cur; closePage('detail'); A.remove(id); items = items.filter(x => x.id !== id); meta.order = meta.order.filter(x => x !== id); saveMeta(); renderHome();
-});
+}); }
 
 $('#cropFull').onclick = () => openAttach({ kind: 'new', data: cropResult(true), t: cropT, img: cropSrc, info: fmtT(cropT) + ' · 전체' });
 $('#cropOk').onclick = () => { const d = cropResult(false); openAttach({ kind: 'new', data: d, t: cropT, img: d, info: fmtT(cropT) + ' · 잘라낸 부분' }); };

@@ -36,6 +36,7 @@
   <nav class="bar5 selbar" id="selBar">
     <button id="sMove"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M10 13h6M13 10l3 3-3 3"/></svg>폴더 이동</button>
     <button id="sOrder"><svg class="ic" viewBox="0 0 24 24"><path d="M8 4v16M4 8l4-4 4 4M16 20V4M12 16l4 4 4-4"/></svg>순서 바꾸기</button>
+    <button id="sShare"><svg class="ic" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></svg>공유</button>
     <button id="sDel" class="danger"><svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>삭제</button>
   </nav>
   <div class="dock normdock">
@@ -54,9 +55,9 @@
     <div class="t" id="dTopTitle"></div>
     <div class="acts">
       <button class="ib" id="aOpen" aria-label="링크로 이동"><svg class="ic" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
+      <button class="ib" id="aShare" aria-label="공유"><svg class="ic" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></svg></button>
       <button class="ib" id="aCopy" aria-label="복사"><svg class="ic" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h9"/></svg></button>
-      <button class="ib" id="aSave" aria-label="원본 저장"><svg class="ic" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></button>
-      <button class="ib danger" id="aDel" aria-label="삭제"><svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+      <button class="ib" id="aMore" aria-label="더 보기"><svg class="ic" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
     </div>
   </header>
   <div class="scroll" id="dScroll"></div>
@@ -246,6 +247,7 @@
 <script src="js/settings.js"></script>
 <script src="js/ask.js"></script>
 <script src="js/slides.js"></script>
+<script src="js/share.js"></script>
 <script src="js/tidy.js"></script>
 <script src="js/main.js"></script>
 </body>

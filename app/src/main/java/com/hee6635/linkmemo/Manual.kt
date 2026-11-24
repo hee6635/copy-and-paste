@@ -32,8 +32,8 @@ object Manual {
 
 [답 형식] 설명 · 인사 없이 JSON 하나만 ```json 코드 블록으로. 키:
 category(문자열), folder(문자열), kind("recipe"|"checklist"|"general"), area(문자열), listName(문자열),
-places([{name, t, info}]), recipe({servings, ingredients, steps: [{text, t}]}), checklist(문자열 목록),
-events([{title, date, time, end, place}]), tips([{label, text, from, t, who}]), star(숫자 목록), tags(문자열 목록),
+places([{name, t, day, map, info}]), recipe({servings, ingredients, steps: [{text, t}]}), checklist(문자열 목록),
+events([{title, date, time, end, place}]), tips([{label, text, from, t, who}]), links([{label, type, value}]), star(숫자 목록), title(문자열), tags(문자열 목록),
 keyshots(빈 목록), desc_ko(문자열), transcript([{t, text, ko}]).
 """)
         return sb.toString()
