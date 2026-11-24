@@ -116,6 +116,7 @@ document.addEventListener('click', e => {
   const ru = t.closest('[data-route]'); if (ru) { A.open(ru.dataset.route); return; }
   if (t.closest('[data-slides]')) return openSlides();
   if (t.closest('#sUsage')) return openUsage();
+  if (t.closest('#sPrompt')) { A.promptRefresh(); toast('규칙 받는 중…'); setTimeout(renderSettings, 3000); return; }
   if (t.closest('#sBackup')) return A.backup(false);
   if (t.closest('#sBackupV')) return A.backup(true);
   if (t.closest('#sRestore')) return confirmAsk('백업 파일로 되살릴까요? 지금 메모는 백업 내용으로 바뀌어요', '되살리기', () => A.restore());

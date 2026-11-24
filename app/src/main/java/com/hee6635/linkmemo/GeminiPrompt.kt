@@ -133,7 +133,7 @@ internal fun junkComment(c: JSONObject): Boolean {
     return t.length < 6
 }
 
-/** 정리 규칙 글: 저장소 글을 고치면 앱 업데이트 없이 바뀜 (6시간마다 받아 둠). 이상한 글이면 안 씀 */
+/** 정리 규칙 글: 저장소 글을 고치면 앱 업데이트 없이 바뀜 (앱 열 때마다 받아 둠). 이상한 글이면 안 씀 */
 object PromptText {
     private const val URL_RAW = "https://raw.githubusercontent.com/hee6635/copy-and-paste/HEAD/app/src/main/assets/prompt/organize.txt"
     private fun sp(ctx: Context) = ctx.getSharedPreferences("prompt", Context.MODE_PRIVATE)
@@ -143,10 +143,8 @@ object PromptText {
     fun get(ctx: Context): String = sp(ctx).getString("text", null)?.takeIf { ok(it) } ?: builtIn(ctx)
     /** 화면 · 검사용: "저장소 11.24 15:30" / "앱 기본" */
     fun source(ctx: Context): String = if (sp(ctx).getString("text", null)?.let { ok(it) } == true) "저장소 " + (sp(ctx).getString("at", "") ?: "") else "앱 기본"
-    fun refresh(ctx: Context, force: Boolean = false) {
-        val now = System.currentTimeMillis()
-        if (!force && now - sp(ctx).getLong("tried", 0) < 6 * 3600_000L) return
-        sp(ctx).edit().putLong("tried", now).apply()
+    /** 받기 (앱 열 때마다 · 설정 [지금 받기]). done(결과 글) 은 일꾼 스레드에서 */
+    fun refresh(ctx: Context, done: ((String) -> Unit)? = null) {
         thread {
             try {
                 val c = URL(URL_RAW).openConnection() as HttpURLConnection
@@ -154,7 +152,8 @@ object PromptText {
                 val t = c.inputStream.bufferedReader().use { it.readText() }
                 if (c.responseCode == 200 && ok(t)) sp(ctx).edit().putString("text", t)
                     .putString("at", java.text.SimpleDateFormat("MM.dd HH:mm", java.util.Locale.KOREA).format(java.util.Date())).apply()
-            } catch (_: Throwable) {}
+                done?.invoke(if (c.responseCode == 200 && ok(t)) "최신 규칙을 받았어요 · " + source(ctx) else "받은 글이 이상해서 그대로 둬요 · " + source(ctx))
+            } catch (e: Throwable) { done?.invoke("못 받았어요 (인터넷) · " + source(ctx)) }
         }
     }
 }

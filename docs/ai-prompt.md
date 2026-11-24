@@ -43,7 +43,7 @@
 ## 3. 정리 규칙 글 (앱 업데이트 없이 바꾸기)
 
 - 원문: `app/src/main/assets/prompt/organize.txt` — 갈래 목록 자리는 `{{CATEGORIES}}` (앱이 채움)
-- **바꾸는 법**: 이 파일을 고쳐 기본 브랜치에 올리면 끝. 앱이 켜질 때 6시간마다 `raw.githubusercontent.com/hee6635/copy-and-paste/HEAD/…/organize.txt` 를 받아 씀. 이 경로는 APK 빌드가 안 돎(빌드 비용 0)
+- **바꾸는 법**: 이 파일을 고쳐 기본 브랜치에 올리면 끝. 앱을 열 때마다 (설정 › AI 정리 규칙 › 지금 받기로 바로) `raw.githubusercontent.com/hee6635/copy-and-paste/HEAD/…/organize.txt` 를 받아 씀. 이 경로는 APK 빌드가 안 돎(빌드 비용 0)
 - **안전장치**: 받은 글에 places · tips · links · star · category · {{CATEGORIES}} · folder · transcript 가 다 있고 800자 넘어야 씀. 아니면 앱에 든 글
 - 어느 글을 썼는지는 메모 원본 탭 AI 기록의 "정리 규칙" 줄 (저장소 날짜 / 앱 기본)
 - 칸 모양(스키마)은 앱 안(GeminiPrompt.kt). 새 칸이 필요하면 앱 업데이트. 대신 **sections(추가 묶음)** 으로 list · steps · table · kv · text 모양은 앱 고치지 않고 늘릴 수 있음
