@@ -169,8 +169,27 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
         // AI 가 고른 중요 장면 자동 캡처 (영상 파일이 있을 때: 저장한 영상 · 잠깐 받은 영상 · 유튜브는 작게 잠깐 받기)
         val shots = JSONArray()
         ai.optJSONArray("places")?.let { pl -> for (i in 0 until pl.length()) { val p0 = pl.getJSONObject(i); val tt = p0.optDouble("t", -1.0); if (tt >= 0) shots.put(JSONObject().put("t", tt + 0.6).put("why", p0.optString("name")).put("sec", "places").put("idx", i)) } }
-        // 장소는 전부 + 중요 장면은 5장까지
-        ai.optJSONArray("keyshots")?.let { k -> for (i in 0 until minOf(5, k.length())) shots.put(k.get(i)) }
+        // 레시피 순서(stepT)도 장소와 똑같이 해당 조리 시각 장면을 직접 캡처
+        var hasStepShots = false
+        ai.optJSONObject("recipe")?.let { r ->
+            val steps = r.optJSONArray("steps")
+            val stepT = r.optJSONArray("stepT")
+            if (steps != null && stepT != null) for (i in 0 until minOf(steps.length(), stepT.length())) {
+                val tt = stepT.optDouble(i, -1.0)
+                if (tt >= 0) {
+                    shots.put(JSONObject().put("t", tt + 0.6).put("why", steps.optString(i)).put("sec", "steps").put("idx", i))
+                    hasStepShots = true
+                }
+            }
+        }
+        // 장소 · 레시피 순서는 전부 + 그 외 중요 장면은 5장까지
+        ai.optJSONArray("keyshots")?.let { k ->
+            for (i in 0 until minOf(5, k.length())) {
+                val ks = k.getJSONObject(i)
+                if (hasStepShots && ks.optString("sec") == "steps") continue
+                shots.put(ks)
+            }
+        }
         if (shots.length() > 0) {
             try {
                 emit(Store.patch(this, id) { it.put("aiBusy", "AI 중요 장면 캡처 중") })
@@ -255,7 +274,7 @@ internal fun SaveService.autoCaptures(id: String, video: File, shots: JSONArray,
     emit(Store.patch(this, id) { o ->
         val arr = o.optJSONArray("captures") ?: JSONArray()
         val out = JSONArray()
-        for (i in 0 until arr.length()) if (!arr.getJSONObject(i).optBoolean("ai")) out.put(arr.get(i))
+        for (i in 0 until arr.length()) if (!arr.getJSONObject(i).optBoolean("ai")) out.put(arr.getJSONObject(i))
         made.forEach { out.put(it) }
         o.put("captures", out)
     })
