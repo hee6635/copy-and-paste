@@ -168,6 +168,8 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
         if (temp == null && holder[0] != null) temp = holder[0]
         // AI 가 고른 중요 장면 자동 캡처 (영상 파일이 있을 때: 저장한 영상 · 잠깐 받은 영상 · 유튜브는 작게 잠깐 받기)
         val shots = JSONArray()
+        val hasPlaces = (ai.optJSONArray("places")?.length() ?: 0) > 0
+        val hasRecipe = ai.optString("kind") == "recipe" && ai.optJSONObject("recipe") != null
         ai.optJSONArray("places")?.let { pl -> for (i in 0 until pl.length()) { val p0 = pl.getJSONObject(i); val tt = p0.optDouble("t", -1.0); if (tt >= 0) shots.put(JSONObject().put("t", tt + 0.6).put("why", p0.optString("name")).put("sec", "places").put("idx", i)) } }
         // 레시피 순서(stepT)도 장소와 똑같이 해당 조리 시각 장면을 직접 캡처
         var hasStepShots = false
@@ -182,11 +184,26 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
                 }
             }
         }
-        // 장소 · 레시피 순서는 전부 + 그 외 중요 장면은 5장까지
+        // 일반 요약 카드(장소·레시피 없을 때)도 각 카드의 영상 시각(t)에 맞춰 1:1 캡처
+        val sumTs = mutableListOf<Double>()
+        if (!hasPlaces && !hasRecipe) {
+            val sum = ai.optJSONArray("summary")
+            val meta = ai.optJSONArray("sumMeta")
+            if (sum != null && meta != null) for (i in 0 until minOf(sum.length(), meta.length())) {
+                val m = meta.optJSONObject(i)
+                val tt = m?.optDouble("t", -1.0) ?: -1.0
+                if (m?.optString("from") == "video" && tt >= 0) {
+                    shots.put(JSONObject().put("t", tt + 0.6).put("why", sum.optString(i)).put("sec", "summary").put("idx", i).put("direct", true))
+                    sumTs += tt
+                }
+            }
+        }
+        // 장소 · 레시피 순서 · 요약 카드는 1:1 캡처 + 그 외 중요 장면은 5장까지
         ai.optJSONArray("keyshots")?.let { k ->
             for (i in 0 until minOf(5, k.length())) {
                 val ks = k.getJSONObject(i)
                 if (hasStepShots && ks.optString("sec") == "steps") continue
+                if (sumTs.isNotEmpty() && (ks.optString("sec") == "summary" || sumTs.any { st -> kotlin.math.abs(st - ks.optDouble("t", -99.0)) <= 2.0 })) continue
                 shots.put(ks)
             }
         }
@@ -232,7 +249,7 @@ internal fun SaveService.aiInto(id: String, force: Boolean, auto: Boolean = fals
 /** 예전 자동 캡처는 지우고, 새로 고른 장면을 잘라 붙임 + 글자 읽기 */
 /**
  * 캡처를 붙일 줄 확인: AI 가 고른 줄에 사진 설명(why)의 낱말이 하나라도 나와야 붙임.
- * 안 맞으면 낱말이 나오는 다른 줄(요약 → 정보) 을 찾고, 그래도 없으면 캡처 칸에만.
+ * 안 맞으면 낱말이 나오는 다른 줄(정보)을 찾고, 그래도 없으면 캡처 칸에만.
  */
 internal fun SaveService.attachFor(k: JSONObject, ai: JSONObject): JSONObject? {
     val words = Regex("[가-힣A-Za-z0-9]{2,}").findAll(k.optString("why")).map { it.value }
@@ -244,12 +261,10 @@ internal fun SaveService.attachFor(k: JSONObject, ai: JSONObject): JSONObject? {
     }
     fun hit(s: String?) = s != null && words.any { w -> s.contains(w) || (w.length >= 3 && s.contains(w.take(w.length - 1))) }
     val sec = k.optString("sec"); val idx = k.optInt("idx", -1)
-    if ((sec == "places" || sec == "steps") && idx >= 0) return JSONObject().put("sec", sec).put("i", idx)
+    if ((sec == "places" || sec == "steps" || (sec == "summary" && k.optBoolean("direct"))) && idx >= 0) return JSONObject().put("sec", sec).put("i", idx)
     if ((sec == "summary" || sec == "facts") && idx >= 0 && hit(lineText(sec, idx))) return JSONObject().put("sec", sec).put("i", idx)
-    for (s2 in listOf("summary", "facts")) {
-        val n = if (s2 == "summary") ai.optJSONArray("summary")?.length() ?: 0 else ai.optJSONArray("facts")?.length() ?: 0
-        for (i in 0 until n) if (hit(lineText(s2, i))) return JSONObject().put("sec", s2).put("i", i)
-    }
+    val n = ai.optJSONArray("facts")?.length() ?: 0
+    for (i in 0 until n) if (hit(lineText("facts", i))) return JSONObject().put("sec", "facts").put("i", i)
     return null
 }
 
@@ -274,7 +289,7 @@ internal fun SaveService.autoCaptures(id: String, video: File, shots: JSONArray,
     emit(Store.patch(this, id) { o ->
         val arr = o.optJSONArray("captures") ?: JSONArray()
         val out = JSONArray()
-        for (i in 0 until arr.length()) if (!arr.getJSONObject(i).optBoolean("ai")) out.put(arr.getJSONObject(i))
+        for (i in 0 until arr.length()) if (!arr.getJSONObject(i).optBoolean("ai")) out.put(arr.get(i))
         made.forEach { out.put(it) }
         o.put("captures", out)
     })
