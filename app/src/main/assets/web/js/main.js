@@ -22,7 +22,11 @@ window.App = {
     while (stack.length && stack[stack.length - 1].type === 'sheet') closeTop();
     openSave(url);
   },
-  onBack() { return closeTop(); },
+  onBack() {
+    const pf = $('#photoFull');
+    if (pf) { pf.remove(); return true; }
+    return closeTop();
+  },
   onOcr(id, o) {
     if (cur !== id || !live || !$('#lv')) return;
     if (o.p != null) { const b = $('#lvProg i'); if (b) b.style.transform = `scaleX(${Math.min(1, o.p)})`; }
