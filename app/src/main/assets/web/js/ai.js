@@ -109,16 +109,18 @@ function chapterRow(it, chs, i) {
 /** [[핵심]] → 숫자 · 시간이면 노란 칩, 아니면 굵게만 */
 const CHIPY = /[0-9０-９]|오전|오후|아침|저녁|새벽|점심|밤|분|시간|원|동|달러|성급|박|일차/;
 const rich = s => esc(s).replace(/\[\[(.+?)\]\]/g, (m, x) => CHIPY.test(x) ? `<span class="chip2">${x}</span>` : `<b>${x}</b>`);
+/** 캡처 글자 위치(focusY) 자동 초점 */
+const capPos = c => `style="object-position:50% ${c && c.focusY != null ? c.focusY : 50}%"`;
 /** 장소 한 줄: 사진(없으면 번호) · 이름 · 시각 · 핵심 정보 */
 function placeRow(it, p, i) {
   const c = (it.captures || []).find(c => c.at && c.at.sec === 'places' && +c.at.i === i);
-  const th = c ? `<button class="th2" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><i>${i + 1}</i></button>` : `<div class="th2 n"><i>${i + 1}</i></div>`;
+  const th = c ? `<button class="th2" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" ${capPos(c)} alt=""><i>${i + 1}</i></button>` : `<div class="th2 n"><i>${i + 1}</i></div>`;
   const pin = it.ai && !it.ai.listName && p.map !== false ? `<button class="pin" data-map="${esc(mapQ(it, p))}" aria-label="지도에서 보기"><svg class="ic" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg></button>` : '';
   return `<div class="pr${pin ? ' haspin' : ''}${p.map === false ? ' off' : ''}">${th}<div class="pb"><b><span>${esc(p.name)}</span>${+p.t >= 0 ? `<button class="tm" data-seek="${+p.t}">${fmtT(p.t)}</button>` : ''}</b><p>${rich(p.info || '')}</p></div>${pin}</div>`;
 }
 function stepRow(it, x, i) {
   const c = (it.captures || []).find(c => c.at && c.at.sec === 'steps' && +c.at.i === i);
-  const th = c ? `<button class="th2 s" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><i>${i + 1}</i></button>` : `<div class="th2 s n"><i>${i + 1}</i></div>`;
+  const th = c ? `<button class="th2 s" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" ${capPos(c)} alt=""><i>${i + 1}</i></button>` : `<div class="th2 s n"><i>${i + 1}</i></div>`;
   const st = +(((it.ai && it.ai.recipe && it.ai.recipe.stepT) || [])[i]);
   return `<div class="pr st">${th}<div class="pb"><p>${st >= 0 ? `<button class="tm" data-seek="${st}">${fmtT(st)}</button> ` : ''}${rich(x)}</p></div></div>`;
 }
@@ -127,8 +129,8 @@ const plain = s => String(s || '').replace(/\[\[(.+?)\]\]/g, '$1');
 function sumCard(it, x, i) {
   const cs = (it.captures || []).filter(c => c.at && c.at.sec === 'summary' && +c.at.i === i);
   const big = cs[0], rest = cs.slice(1);
-  return `<div class="scard">${big ? `<button class="sbig" data-cap="${esc(big.id)}"><img src="${fileUrl(it.id, big.file)}" alt=""><span class="tc">${fmtT(big.t)}</span>${big.ai ? '<span class="aib">AI</span>' : ''}</button>` : ''}
-    <div class="stx">${srcChip(it, i)}${tipLabel(it, i)}${rich(x)}</div>${rest.length ? `<div class="att in">${rest.map(c => `<button class="shot" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}</button>`).join('')}</div>` : ''}</div>`;
+  return `<div class="scard">${big ? `<button class="sbig" data-cap="${esc(big.id)}"><img src="${fileUrl(it.id, big.file)}" ${capPos(big)} alt=""><span class="tc">${fmtT(big.t)}</span>${big.ai ? '<span class="aib">AI</span>' : ''}</button>` : ''}
+    <div class="stx">${srcChip(it, i)}${tipLabel(it, i)}${rich(x)}</div>${rest.length ? `<div class="att in">${rest.map(c => `<button class="shot" data-cap="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" ${capPos(c)} alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}</button>`).join('')}</div>` : ''}</div>`;
 }
 
 // ── AI 가 쓰는 중: 설명 → 받아쓰기 → 중요한 줄 → 요약 카드 (주르륵) ──
