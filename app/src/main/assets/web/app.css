@@ -104,7 +104,7 @@ input,textarea{font:inherit;color:var(--fg)}
 @keyframes flash{0%{opacity:.8}100%{opacity:0}}
 .meta{padding:16px 20px 4px}
 .meta .s{font-size:13px;color:var(--muted)}
-.meta h2{margin:4px 0 10px;font-size:21px;font-weight:800;letter-spacing:-.4px;line-height:1.35;word-break:break-all}
+.meta h2{margin:4px 0 10px;font-size:21px;font-weight:800;letter-spacing:-.4px;line-height:1.35;word-break:keep-all;overflow-wrap:anywhere}
 .tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .tg{display:inline-flex;align-items:center;height:30px;padding:0 10px;border-radius:9px;background:var(--bg);font-size:13px;color:var(--sub);animation:pop .3s var(--ease)}
 .add{width:30px;height:30px;border-radius:15px;border:1.5px solid var(--pillline);display:inline-flex;align-items:center;justify-content:center;color:var(--muted)}
