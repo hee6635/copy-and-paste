@@ -115,9 +115,22 @@ function openCap(capId) {
   renderCap();
   openPage('capView');
 }
+function stepCap(dir) {
+  const it = byId(cur); const caps = (it && it.captures) || [];
+  const i = caps.findIndex(x => x.id === curCap);
+  const ni = i + dir;
+  if (i < 0 || ni < 0 || ni >= caps.length) return;
+  saveCapMemo();
+  curCap = caps[ni].id;
+  renderCap();
+  const pf = $('#photoFull img');
+  if (pf) pf.src = fileUrl(it.id, caps[ni].file);
+}
 function renderCap() {
-  const it = byId(cur); const c = it && (it.captures || []).find(x => x.id === curCap); if (!c) return;
-  $('#cTitle').textContent = '캡처 ' + fmtT(c.t);
+  const it = byId(cur); const caps = (it && it.captures) || [];
+  const idx = caps.findIndex(x => x.id === curCap);
+  const c = idx >= 0 ? caps[idx] : null; if (!c) return;
+  $('#cTitle').textContent = '캡처 ' + fmtT(c.t) + (caps.length > 1 ? ` (${idx + 1}/${caps.length})` : '');
   const sc = $('#cScroll');
   if (!sc.querySelector('#cMemo') || sc.dataset.cap !== c.id) {
     sc.dataset.cap = c.id;
@@ -127,7 +140,7 @@ function renderCap() {
       <label class="memo" style="margin-top:8px"><small>메모</small><textarea id="cMemo" rows="1"></textarea></label>
       <div class="capat" id="cAt"></div></div>`;
     $('#cMemo').value = c.memo || ''; autoGrow($('#cMemo'));
-    zoomable(sc.querySelector('.capimg'), () => openPhotoFull(src));
+    zoomable(sc.querySelector('.capimg'), () => openPhotoFull(src), false, stepCap);
   }
   const ls = (c.text || '').split('\n').map(x => x.trim()).filter(Boolean);
   $('#cOcr').innerHTML = `<div class="sh"><b>화면 글자</b>${ls.length > 1 ? `<button class="chip dark" data-copytext="${esc(c.text)}">전체 복사</button>` : ''}</div>` +
@@ -142,7 +155,7 @@ function saveCapMemo() {
   c.memo = v; A.update(cur, JSON.stringify({ captures: it.captures }));
 }
 
-/** 순수 사진 전체화면 (UI 없이 사진만 · 확대/축소 가능 · 1배율에서 한 번 탭하면 닫힘) */
+/** 순수 사진 전체화면 (UI 없이 사진만 · 확대/축소 · 좌우 스와이프 · 1배율에서 한 번 탭하면 닫힘) */
 function openPhotoFull(src) {
   const old = $('#photoFull'); if (old) old.remove();
   const el = document.createElement('div');
@@ -150,15 +163,15 @@ function openPhotoFull(src) {
   el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;';
   el.innerHTML = `<img src="${src}" alt="" style="width:100%;height:100%;object-fit:contain;user-select:none;-webkit-user-drag:none;">`;
   document.body.appendChild(el);
-  zoomable(el, () => el.remove(), true);
+  zoomable(el, () => el.remove(), true, stepCap);
 }
 
-/** 사진 확대: 두 손가락 벌리기 · 두 번 톡(2배 ↔ 원래) · 한 번 톡(onTap) · 확대 중 한 손가락으로 옮기기 */
-function zoomable(box, onTap, fullMode) {
+/** 사진 확대: 두 손가락 벌리기 · 두 번 톡(2배 ↔ 원래) · 한 번 톡(onTap) · 1배율 좌우 스와이프(onSwipe) */
+function zoomable(box, onTap, fullMode, onSwipe) {
   if (!box) return;
   const img = box.querySelector('img'); if (!img) return;
   img.draggable = false;  // 사진 끌기(파일 끌기)가 손가락 이동을 끊지 않게
-  let k = 1, x = 0, y = 0, pts = new Map(), start = null, lastTap = 0, tapTimer = null, moved = false, justDbl = false;
+  let k = 1, x = 0, y = 0, pts = new Map(), start = null, lastTap = 0, tapTimer = null, moved = false, justDbl = false, swiping = false;
   const clamp = () => { const mx = box.clientWidth * (k - 1) / 2, my = box.clientHeight * (k - 1) / 2; x = Math.max(-mx, Math.min(mx, x)); y = Math.max(-my, Math.min(my, y)); };
   const apply = anim => {
     img.style.transition = anim ? 'transform .25s var(--ease)' : 'none';
@@ -169,6 +182,7 @@ function zoomable(box, onTap, fullMode) {
   box.addEventListener('pointerdown', e => {
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); box.setPointerCapture(e.pointerId);
     start = { k, x, y, d: pts.size === 2 ? dist() : 0, px: e.clientX, py: e.clientY };
+    swiping = false;
     if (pts.size > 1) { moved = true; if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; } }
     else {
       moved = false; justDbl = false;
@@ -182,12 +196,26 @@ function zoomable(box, onTap, fullMode) {
   box.addEventListener('pointermove', e => {
     if (!pts.has(e.pointerId)) return;
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (Math.hypot(e.clientX - start.px, e.clientY - start.py) > 8) moved = true;
-    if (pts.size === 2 && start.d) { k = Math.max(1, Math.min(4, start.k * dist() / start.d)); clamp(); apply(false); }
-    else if (pts.size === 1 && k > 1) { x = start.x + e.clientX - start.px; y = start.y + e.clientY - start.py; clamp(); apply(false); }
+    const dx = e.clientX - start.px, dy = e.clientY - start.py;
+    if (Math.hypot(dx, dy) > 8) moved = true;
+    if (pts.size === 2 && start.d) { swiping = false; k = Math.max(1, Math.min(4, start.k * dist() / start.d)); clamp(); apply(false); }
+    else if (pts.size === 1 && k > 1) { x = start.x + dx; y = start.y + dy; clamp(); apply(false); }
+    else if (pts.size === 1 && k <= 1.02 && onSwipe) {
+      if (!swiping && Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy) * 1.3) swiping = true;
+      if (swiping) { img.style.transition = 'none'; img.style.transform = `translate(${dx * 0.35}px,0)`; }
+    }
   });
   const up = e => {
+    const dx = start ? e.clientX - start.px : 0;
     pts.delete(e.pointerId);
+    if (swiping) {
+      swiping = false;
+      img.style.transition = 'transform .2s var(--ease)';
+      img.style.transform = 'translate(0,0) scale(1)';
+      if (Math.abs(dx) > 55 && onSwipe) onSwipe(dx < 0 ? 1 : -1);
+      start = { k, x, y, d: 0, px: e.clientX, py: e.clientY };
+      return;
+    }
     start = { k, x, y, d: 0, px: e.clientX, py: e.clientY };
     if (k <= 1.02) { k = 1; x = y = 0; apply(true); }
     if (!justDbl && !moved && pts.size === 0 && onTap && k <= 1.02) {
