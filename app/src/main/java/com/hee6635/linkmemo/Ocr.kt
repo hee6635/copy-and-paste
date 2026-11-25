@@ -5,25 +5,54 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 import java.io.File
 import kotlin.concurrent.thread
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /** 캡처 그림의 글자 읽기 + 영상에서 장면 잘라 내기 */
 object Ocr {
+    /** 글자가 가장 많이 몰린 세로 중심 위치(0~100%). 글자가 없으면 null */
+    private fun focusYOf(res: Text, imgH: Int): Int? {
+        if (imgH <= 0) return null
+        val blocks = res.textBlocks.mapNotNull { b ->
+            val box = b.boundingBox ?: return@mapNotNull null
+            val len = b.text.replace(Regex("\\s"), "").length
+            if (len < 2 || !Regex("[가-힣A-Za-z0-9]{2,}").containsMatchIn(b.text)) return@mapNotNull null
+            (box.centerY().toFloat() / imgH) to len
+        }
+        if (blocks.isEmpty()) return null
+        // 각 블록 기준 ±15% 세로 구간에 글자 수가 가장 많이 모인 구간 선택
+        val bestCenter = blocks.maxByOrNull { (cy, _) ->
+            blocks.filter { abs(it.first - cy) <= 0.15f }.sumOf { it.second }
+        }?.first ?: return null
+        val band = blocks.filter { abs(it.first - bestCenter) <= 0.15f }
+        val totalW = band.sumOf { it.second }.coerceAtLeast(1)
+        val avg = band.sumOf { (it.first * it.second).toDouble() } / totalW
+        return (avg * 100.0).roundToInt().coerceIn(10, 90)
+    }
+
     fun run(ctx: Context, id: String, capId: String, file: File) {
         val bmp = BitmapFactory.decodeFile(file.absolutePath) ?: return
+        val imgH = bmp.height
         TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
             .process(InputImage.fromBitmap(bmp, 0))
             .addOnCompleteListener { task ->
                 val text = if (task.isSuccessful) task.result.text.trim() else ""
+                val fy = if (task.isSuccessful) focusYOf(task.result, imgH) else null
                 thread {
                     Store.patch(ctx, id) {
                         val arr = it.optJSONArray("captures") ?: return@patch
                         for (i in 0 until arr.length()) {
                             val c = arr.getJSONObject(i)
-                            if (c.optString("id") == capId) { c.put("text", text); c.remove("ocr") }
+                            if (c.optString("id") == capId) {
+                                c.put("text", text)
+                                if (fy != null) c.put("focusY", fy) else c.remove("focusY")
+                                c.remove("ocr")
+                            }
                         }
                     }?.let { Events.item(it) }
                 }
