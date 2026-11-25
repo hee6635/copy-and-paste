@@ -66,7 +66,7 @@ function renderAi(it) {
 
 const hm = ms => { const d = new Date(ms); return (d.getHours() < 12 ? '오전 ' : '오후 ') + ((d.getHours() + 11) % 12 + 1) + ':' + String(d.getMinutes()).padStart(2, '0'); };
 
-// ── 인분 조절: 재료 속 숫자 · 반개/반모에 배수를 곱함 (장류·소금은 75% 보정) ──
+// ── 인분 조절: 재료 성격별 3단계 비율 보정 + 0.5 단위 반올림 ──
 const srvMul = {};
 const MULS = [0.5, 1, 1.5, 2, 3, 4];
 const srvF = it => srvMul[it.id] || 1;
@@ -76,13 +76,30 @@ function srvHtml(it, rec) {
   return `<span class="srv"><button data-srv="-1" aria-label="줄이기"${f <= MULS[0] ? ' disabled' : ''}>−</button><b>${lab}</b><button data-srv="1" aria-label="늘리기"${f >= MULS[MULS.length - 1] ? ' disabled' : ''}>+</button></span>`;
 }
 const fmtN = n => String(Math.round(n * 10) / 10);
-const SALTY = /고추장|된장|쌈장|간장|소금|액젓|굴소스|맛소금|다시다|치킨스톡|미원/;
+const OIL_SPICE = /식용유|올리브유|참기름|들기름|버터|마늘|고춧가루|후추|생강|식초|레몬즙|미림|맛술|청주|소주|와인/;
+const SEASONING = /고추장|된장|쌈장|간장|소금|액젓|굴소스|맛소금|다시다|치킨스톡|미원|코인육수|육수|참치액|쯔유|연두|케첩|마요네즈|설탕|올리고당|물엿|꿀|알룰로스|소스|양념/;
+const HALF_U = /^(?:스푼|큰술|작은술|숟가락|개|모|알|컵|봉지|대|줄|장|쪽|T|t)(?![가-힣A-Za-z])/;
+const INT_U = /^(?:g|ml|cc|kg|L)(?![가-힣A-Za-z])/i;
+
+function fmtIng(v, unit) {
+  if (INT_U.test(unit)) return String(Math.round(v));
+  if (HALF_U.test(unit) && v >= 0.5) return String(Math.round(v * 2) / 2);
+  return fmtN(v);
+}
+
 function scaleIng(x, f) {
   if (f === 1) return x;
   const s = String(x);
-  const k = f > 1 && SALTY.test(s) ? 1 + (f - 1) * 0.75 : f;
-  return s.replace(/반\s*(개|모|스푼|큰술|작은술|컵|봉지|대|줄|알|장|쪽)|(\d+(?:\.\d+)?)(?:\s*\/\s*(\d+))?/g,
-    (_, u, a, b) => u ? fmtN(0.5 * k) + u : fmtN((b ? +a / +b : +a) * k));
+  const rate = f > 1 ? (OIL_SPICE.test(s) ? 0.6 : SEASONING.test(s) ? 0.7 : 1) : 1;
+  const k = 1 + (f - 1) * rate;
+  return s.replace(
+    /반\s*(개|모|스푼|큰술|작은술|숟가락|컵|봉지|대|줄|알|장|쪽)|(\d+(?:\.\d+)?)(?:\s*\/\s*(\d+))?(\s*[가-힣A-Za-z]*)/g,
+    (_, bu, a, b, u) => {
+      if (bu) return fmtIng(0.5 * k, bu) + bu;
+      const v = (b ? +a / +b : +a) * k;
+      return fmtIng(v, (u || '').trim()) + (u || '');
+    }
+  );
 }
 
 // ── 일정 → 캘린더 ──
