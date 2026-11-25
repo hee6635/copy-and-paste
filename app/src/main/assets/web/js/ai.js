@@ -66,7 +66,7 @@ function renderAi(it) {
 
 const hm = ms => { const d = new Date(ms); return (d.getHours() < 12 ? '오전 ' : '오후 ') + ((d.getHours() + 11) % 12 + 1) + ':' + String(d.getMinutes()).padStart(2, '0'); };
 
-// ── 인분 조절: 재료 속 숫자에 배수를 곱함 (분수 1/2 도) ──
+// ── 인분 조절: 재료 속 숫자 · 반개/반모에 배수를 곱함 (장류·소금은 75% 보정) ──
 const srvMul = {};
 const MULS = [0.5, 1, 1.5, 2, 3, 4];
 const srvF = it => srvMul[it.id] || 1;
@@ -76,9 +76,13 @@ function srvHtml(it, rec) {
   return `<span class="srv"><button data-srv="-1" aria-label="줄이기"${f <= MULS[0] ? ' disabled' : ''}>−</button><b>${lab}</b><button data-srv="1" aria-label="늘리기"${f >= MULS[MULS.length - 1] ? ' disabled' : ''}>+</button></span>`;
 }
 const fmtN = n => String(Math.round(n * 10) / 10);
+const SALTY = /고추장|된장|쌈장|간장|소금|액젓|굴소스|맛소금|다시다|치킨스톡|미원/;
 function scaleIng(x, f) {
   if (f === 1) return x;
-  return String(x).replace(/(\d+(?:\.\d+)?)(?:\s*\/\s*(\d+))?/g, (m, a, b) => fmtN((b ? +a / +b : +a) * f));
+  const s = String(x);
+  const k = f > 1 && SALTY.test(s) ? 1 + (f - 1) * 0.75 : f;
+  return s.replace(/반\s*(개|모|스푼|큰술|작은술|컵|봉지|대|줄|알|장|쪽)|(\d+(?:\.\d+)?)(?:\s*\/\s*(\d+))?/g,
+    (_, u, a, b) => u ? fmtN(0.5 * k) + u : fmtN((b ? +a / +b : +a) * k));
 }
 
 // ── 일정 → 캘린더 ──
