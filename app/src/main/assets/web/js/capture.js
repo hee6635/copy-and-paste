@@ -103,7 +103,7 @@ function openCapSel(firstId) {
 }
 function renderCapSel() {
   const it = byId(cur); const caps = it.captures || [];
-  $('#csGrid').innerHTML = caps.map(c => `<button class="shot${capSel.has(c.id) ? ' picked' : ''}" data-csel="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}<span class="ck2"></span></button>`).join('');
+  $('#csGrid').innerHTML = caps.map(c => `<button class="shot${capSel.has(c.id) ? ' picked' : ''}" data-csel="${esc(c.id)}"><img src="${fileUrl(it.id, c.file)}" style="object-position:50% ${c.focusY != null ? c.focusY : 50}%" alt=""><span class="tc">${fmtT(c.t)}</span>${c.ai ? '<span class="aib">AI</span>' : ''}<span class="ck2"></span></button>`).join('');
   $('#csCount').textContent = capSel.size + '개 선택';
   $('#csMove').disabled = $('#csDel').disabled = capSel.size === 0;
 }
@@ -121,12 +121,13 @@ function renderCap() {
   const sc = $('#cScroll');
   if (!sc.querySelector('#cMemo') || sc.dataset.cap !== c.id) {
     sc.dataset.cap = c.id;
-    sc.innerHTML = `<div class="capimg"><img src="${fileUrl(it.id, c.file)}" alt=""></div>
+    const src = fileUrl(it.id, c.file);
+    sc.innerHTML = `<div class="capimg"><img src="${src}" alt=""></div>
       <div class="sec"><div class="ocr" id="cOcr"></div>
       <label class="memo" style="margin-top:8px"><small>메모</small><textarea id="cMemo" rows="1"></textarea></label>
       <div class="capat" id="cAt"></div></div>`;
     $('#cMemo').value = c.memo || ''; autoGrow($('#cMemo'));
-    zoomable(sc.querySelector('.capimg'));
+    zoomable(sc.querySelector('.capimg'), () => openPhotoFull(src));
   }
   const ls = (c.text || '').split('\n').map(x => x.trim()).filter(Boolean);
   $('#cOcr').innerHTML = `<div class="sh"><b>화면 글자</b>${ls.length > 1 ? `<button class="chip dark" data-copytext="${esc(c.text)}">전체 복사</button>` : ''}</div>` +
@@ -141,26 +142,57 @@ function saveCapMemo() {
   c.memo = v; A.update(cur, JSON.stringify({ captures: it.captures }));
 }
 
-/** 사진 확대: 두 손가락 벌리기 · 두 번 톡(2배 ↔ 원래) · 확대 중 한 손가락으로 옮기기 (transform 만) */
-function zoomable(box) {
+/** 순수 사진 전체화면 (UI 없이 사진만 · 확대/축소 가능 · 1배율에서 한 번 탭하면 닫힘) */
+function openPhotoFull(src) {
+  const old = $('#photoFull'); if (old) old.remove();
+  const el = document.createElement('div');
+  el.id = 'photoFull';
+  el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;';
+  el.innerHTML = `<img src="${src}" alt="" style="width:100%;height:100%;object-fit:contain;user-select:none;-webkit-user-drag:none;">`;
+  document.body.appendChild(el);
+  zoomable(el, () => el.remove(), true);
+}
+
+/** 사진 확대: 두 손가락 벌리기 · 두 번 톡(2배 ↔ 원래) · 한 번 톡(onTap) · 확대 중 한 손가락으로 옮기기 */
+function zoomable(box, onTap, fullMode) {
   if (!box) return;
   const img = box.querySelector('img'); if (!img) return;
   img.draggable = false;  // 사진 끌기(파일 끌기)가 손가락 이동을 끊지 않게
-  let k = 1, x = 0, y = 0, pts = new Map(), start = null, lastTap = 0;
+  let k = 1, x = 0, y = 0, pts = new Map(), start = null, lastTap = 0, tapTimer = null, moved = false, justDbl = false;
   const clamp = () => { const mx = box.clientWidth * (k - 1) / 2, my = box.clientHeight * (k - 1) / 2; x = Math.max(-mx, Math.min(mx, x)); y = Math.max(-my, Math.min(my, y)); };
-  const apply = anim => { img.style.transition = anim ? 'transform .25s var(--ease)' : 'none'; img.style.transform = `translate(${x}px,${y}px) scale(${k})`; box.style.touchAction = k > 1 ? 'none' : 'pan-y'; };
+  const apply = anim => {
+    img.style.transition = anim ? 'transform .25s var(--ease)' : 'none';
+    img.style.transform = `translate(${x}px,${y}px) scale(${k})`;
+    box.style.touchAction = (fullMode || k > 1) ? 'none' : 'pan-y';
+  };
   const dist = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
   box.addEventListener('pointerdown', e => {
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); box.setPointerCapture(e.pointerId);
     start = { k, x, y, d: pts.size === 2 ? dist() : 0, px: e.clientX, py: e.clientY };
-    if (pts.size === 1) { const now = Date.now(); if (now - lastTap < 300) { k = k > 1 ? 1 : 2; x = y = 0; apply(true); lastTap = 0; } else lastTap = now; }
+    if (pts.size > 1) { moved = true; if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; } }
+    else {
+      moved = false; justDbl = false;
+      const now = Date.now();
+      if (now - lastTap < 280) {
+        if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
+        k = k > 1 ? 1 : 2; x = y = 0; apply(true); lastTap = 0; justDbl = true;
+      } else lastTap = now;
+    }
   });
   box.addEventListener('pointermove', e => {
     if (!pts.has(e.pointerId)) return;
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (Math.hypot(e.clientX - start.px, e.clientY - start.py) > 8) moved = true;
     if (pts.size === 2 && start.d) { k = Math.max(1, Math.min(4, start.k * dist() / start.d)); clamp(); apply(false); }
     else if (pts.size === 1 && k > 1) { x = start.x + e.clientX - start.px; y = start.y + e.clientY - start.py; clamp(); apply(false); }
   });
-  const up = e => { pts.delete(e.pointerId); start = { k, x, y, d: 0, px: e.clientX, py: e.clientY }; if (k <= 1.02) { k = 1; x = y = 0; apply(true); } };
+  const up = e => {
+    pts.delete(e.pointerId);
+    start = { k, x, y, d: 0, px: e.clientX, py: e.clientY };
+    if (k <= 1.02) { k = 1; x = y = 0; apply(true); }
+    if (!justDbl && !moved && pts.size === 0 && onTap && k <= 1.02) {
+      tapTimer = setTimeout(() => { tapTimer = null; onTap(); }, 280);
+    }
+  };
   box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
 }
